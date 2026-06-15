@@ -42,7 +42,7 @@ class TestEngineScanWorkflow:
         assert report.metadata["encoding"] == "utf-8"
 
         # SQL Injection should be detected, analyzed (Severity CRITICAL), and ranked
-        assert report.total_findings == 1
+        assert report.total_findings >= 1
         finding = report.findings[0]
         assert finding.vulnerability_type == VulnerabilityType.SQL_INJECTION
         assert finding.severity == Severity.CRITICAL

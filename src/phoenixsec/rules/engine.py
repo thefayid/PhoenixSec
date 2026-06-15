@@ -42,6 +42,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import phoenixsec.rules.ast_rules  # noqa: F401 — AST-level Python analysis
 import phoenixsec.rules.broken_auth  # noqa: F401
 import phoenixsec.rules.command_injection  # noqa: F401
 import phoenixsec.rules.insecure_deserialization  # noqa: F401

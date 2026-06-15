@@ -114,8 +114,21 @@ def main_callback(
 @app.command()
 def version() -> None:
     """Show PhoenixSec version and system information."""
-    import platform
     import sys
+
+    # Safe platform name detection to avoid hanging platform module on some Windows systems
+    if sys.platform == "win32":
+        try:
+            win_ver = sys.getwindowsversion()
+            platform_str = f"Windows {win_ver.major}.{win_ver.minor} (Build {win_ver.build})"
+        except Exception:
+            platform_str = "Windows"
+    elif sys.platform == "darwin":
+        platform_str = "macOS"
+    elif sys.platform.startswith("linux"):
+        platform_str = "Linux"
+    else:
+        platform_str = sys.platform.capitalize()
 
     panel_content = Text.assemble(
         ("PhoenixSec\n", "bold magenta"),
@@ -124,7 +137,7 @@ def version() -> None:
         ("Python   : ", "dim"),
         (f"{sys.version.split()[0]}\n", "bold white"),
         ("Platform : ", "dim"),
-        (f"{platform.system()} {platform.release()}\n", "bold white"),
+        (f"{platform_str}\n", "bold white"),
         ("License  : ", "dim"),
         (f"{phoenixsec.__license__}", "bold white"),
     )
@@ -1183,20 +1196,61 @@ def scan_org(
             help="Disable Software Composition Analysis (SCA) dependency scanning.",
         ),
     ] = False,
+    max_repos: Annotated[
+        int,
+        typer.Option(
+            "--max-repos",
+            help="Maximum number of repositories to scan (0 = unlimited).",
+        ),
+    ] = 0,
+    workers: Annotated[
+        int,
+        typer.Option(
+            "--workers",
+            "-w",
+            help="Number of parallel workers for concurrent repo scanning.",
+        ),
+    ] = 4,
+    per_repo_reports: Annotated[
+        bool,
+        typer.Option(
+            "--per-repo-reports/--no-per-repo-reports",
+            help="Save individual JSON reports for each repository.",
+        ),
+    ] = True,
 ) -> None:
     """Scan all repositories in a GitHub Organization.
 
-    Clones each repository into a temporary directory, runs the scanner,
-    and aggregates all findings into a single report.
+    Clones each repository in parallel, runs the scanner on all repos
+    concurrently, aggregates findings, and saves per-repo reports.
+
+    [dim]Examples:[/dim]
+      [green]phoenixsec scan-org my-org --format json[/green]
+      [green]phoenixsec scan-org my-org --workers 8 --max-repos 20 --no-sca[/green]
     """
     import json
     import shutil
     import subprocess
+    import time
     import urllib.error
     import urllib.request
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from rich.live import Live
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TaskProgressColumn,
+        TextColumn,
+        TimeElapsedColumn,
+    )
+    from rich.table import Table as RichTable
 
     from phoenixsec.models.report import Report
     from phoenixsec.models.vulnerability import Severity
+    from phoenixsec.reporters.json_reporter import JsonReporter
     from phoenixsec.rules.engine import RuleEngine
 
     cfg = ctx.obj["config"]
@@ -1218,95 +1272,218 @@ def scan_org(
     # Force loading rule classes so they register in RuleRegistry
     import phoenixsec.rules.sqli  # noqa: F401
 
-    console.print(f"[bold magenta]Fetching repositories for GitHub Org: {org}...[/bold magenta]")
+    console.print(
+        Panel(
+            Text.assemble(
+                ("🏢 PhoenixSec Org Scanner\n\n", "bold magenta"),
+                ("Organization : ", "dim"),
+                (f"{org}\n", "bold white"),
+                ("Workers      : ", "dim"),
+                (f"{workers}\n", "bold white"),
+                ("Max Repos    : ", "dim"),
+                (f"{'Unlimited' if max_repos == 0 else max_repos}\n", "bold white"),
+                ("Severity     : ", "dim"),
+                (f"{min_severity.name}+\n", "bold yellow"),
+                ("SCA          : ", "dim"),
+                (f"{'Disabled' if no_sca else 'Enabled'}\n", "bold white"),
+            ),
+            title="[bold magenta]PhoenixSec — Organization Scan[/bold magenta]",
+            border_style="magenta",
+        )
+    )
 
-    # Request list of repositories from GitHub API
-    api_url = f"https://api.github.com/orgs/{org}/repos?per_page=100"
-    req = urllib.request.Request(api_url)
-    req.add_header("Accept", "application/vnd.github.v3+json")
-    req.add_header("User-Agent", "PhoenixSec-Scanner")
-    if token:
-        req.add_header("Authorization", f"token {token}")
+    # ── Fetch repositories with pagination ────────────────────────────────────
+    repos_data: list[dict] = []
+    page = 1
+    per_page = 100
 
-    try:
-        with urllib.request.urlopen(req) as response:
-            repos_data = json.loads(response.read().decode("utf-8"))
-    except urllib.error.URLError as e:
-        err_console.print(f"[red]Failed to fetch repositories from GitHub API:[/red] {e}")
+    with console.status(f"[bold cyan]Fetching repositories for {org}...[/bold cyan]"):
+        while True:
+            api_url = f"https://api.github.com/orgs/{org}/repos?per_page={per_page}&page={page}"
+            req = urllib.request.Request(api_url)
+            req.add_header("Accept", "application/vnd.github.v3+json")
+            req.add_header("User-Agent", "PhoenixSec-Scanner")
+            if token:
+                req.add_header("Authorization", f"token {token}")
+
+            try:
+                with urllib.request.urlopen(req) as response:
+                    page_data = json.loads(response.read().decode("utf-8"))
+            except urllib.error.URLError as e:
+                err_console.print(f"Failed to fetch repositories from GitHub API: {e}")
+                raise typer.Exit(code=1)
+
+            if not isinstance(page_data, list) or not page_data:
+                break
+
+            repos_data.extend(page_data)
+            if max_repos > 0 and len(repos_data) >= max_repos:
+                repos_data = repos_data[:max_repos]
+                break
+
+            if len(page_data) < per_page:
+                break
+            page += 1
+
+    if not repos_data:
+        err_console.print("[red]GitHub API returned no repositories or an invalid response.[/red]")
         raise typer.Exit(code=1)
 
-    if not isinstance(repos_data, list):
-        err_console.print("[red]GitHub API returned invalid non-list response.[/red]")
-        raise typer.Exit(code=1)
+    console.print(f"[green]✓ Found [bold]{len(repos_data)}[/bold] repository/repositories.[/green]")
 
-    console.print(f"[green]Found {len(repos_data)} repository/repositories.[/green]")
-
-    # Create temporary directory inside the workspace
+    # ── Setup temp workspace and per-repo reports dir ─────────────────────────
     workspace_dir = Path(".").resolve()
     temp_root = workspace_dir / ".phoenixsec" / "tmp_repos"
     if temp_root.exists():
         shutil.rmtree(temp_root, ignore_errors=True)
     temp_root.mkdir(parents=True, exist_ok=True)
 
-    engine = RuleEngine()
-    aggregated_report = Report(
-        scan_target=f"GitHub Org: {org}",
-        scanner_name="RuleEngine",
-        metadata={"org_name": org, "repos_scanned_count": len(repos_data)},
-    )
+    # Per-repo reports directory
+    org_reports_dir = cfg.reporting.output_dir / "org_scans" / org
+    if per_repo_reports:
+        org_reports_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        for repo in repos_data:
-            repo_name = repo.get("name")
-            clone_url = repo.get("clone_url")
-            if not repo_name or not clone_url:
-                continue
+    # ── Per-repo scan worker ──────────────────────────────────────────────────
+    repo_results: dict[str, dict] = {}  # repo_name → {findings, status, error}
 
-            # Handle auth in clone url if token is set
-            if token:
-                clone_url = clone_url.replace("https://", f"https://x-access-token:{token}@")
+    def _scan_repo(repo: dict) -> dict:
+        """Clone and scan a single repository. Returns a result dict."""
+        repo_name = repo.get("name", "unknown")
+        clone_url = repo.get("clone_url", "")
+        if not repo_name or not clone_url:
+            return {"name": repo_name, "status": "skipped", "findings": [], "error": "no clone_url"}
 
-            repo_path = temp_root / repo_name
-            console.print(f"[cyan]Cloning {repo_name}...[/cyan]")
+        # Inject token into clone URL if provided
+        if token:
+            clone_url = clone_url.replace("https://", f"https://x-access-token:{token}@")
 
-            # Run git clone
-            try:
-                subprocess.run(
-                    ["git", "clone", "--depth", "1", clone_url, str(repo_path)],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=True,
-                )
-            except subprocess.CalledProcessError:
-                console.print(f"[yellow]Failed to clone repository {repo_name}. Skipping.[/yellow]")
-                continue
+        repo_path = temp_root / repo_name
 
-            console.print(f"[cyan]Scanning {repo_name}...[/cyan]")
+        try:
+            subprocess.run(
+                ["git", "clone", "--depth", "1", clone_url, str(repo_path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+                timeout=120,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            return {"name": repo_name, "status": "clone_failed", "findings": [], "error": "git clone failed"}
+
+        try:
+            engine = RuleEngine()
             results = engine.scan_directory(repo_path, recursive=True, sca=not no_sca)
 
+            repo_findings = []
             for res in results:
                 for f in res.findings:
-                    # Update file_path to include the repo name prefix
                     try:
                         rel_path = Path(f.file_path).relative_to(repo_path)
                     except ValueError:
-                        # Fall back if path is not relative (e.g. absolute outside repo or SCA output)
                         rel_path = Path(f.file_path).name
-                    updated_path = f"[{repo_name}] {rel_path}"
-
                     from dataclasses import replace
+                    updated_f = replace(f, file_path=f"[{repo_name}] {rel_path}")
+                    repo_findings.append(updated_f)
 
-                    updated_finding = replace(f, file_path=updated_path)
-                    aggregated_report.add_finding(updated_finding)
+            # Save per-repo JSON report if requested
+            if per_repo_reports:
+                repo_report = Report(
+                    scan_target=f"GitHub Repo: {org}/{repo_name}",
+                    scanner_name="RuleEngine",
+                    metadata={"org": org, "repo": repo_name, "files_scanned": len(results)},
+                )
+                for f in repo_findings:
+                    repo_report.add_finding(f)
 
-            # Cleanup this repo
+                json_reporter = JsonReporter()
+                report_path = org_reports_dir / f"{repo_name}.json"
+                try:
+                    json_reporter.generate(repo_report, report_path)
+                except Exception:
+                    pass  # Don't fail the scan if report saving fails
+
+            return {
+                "name": repo_name,
+                "status": "scanned",
+                "findings": repo_findings,
+                "files_scanned": len(results),
+                "error": None,
+            }
+        except Exception as exc:
+            return {"name": repo_name, "status": "error", "findings": [], "error": str(exc)}
+        finally:
             shutil.rmtree(repo_path, ignore_errors=True)
 
-    finally:
-        # Final cleanup
-        shutil.rmtree(temp_root, ignore_errors=True)
+    # ── Run concurrent scans with Rich progress bar ───────────────────────────
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=console,
+    )
 
-    # Filter findings by minimum severity
+    all_repo_results: list[dict] = []
+
+    with progress:
+        scan_task = progress.add_task(
+            f"[cyan]Scanning {len(repos_data)} repos...",
+            total=len(repos_data),
+        )
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_scan_repo, repo): repo for repo in repos_data}
+
+            for future in as_completed(futures):
+                result = future.result()
+                all_repo_results.append(result)
+                repo_name = result.get("name", "unknown")
+                n_findings = len(result.get("findings", []))
+                status = result.get("status", "?")
+
+                if status == "scanned":
+                    progress.update(
+                        scan_task,
+                        advance=1,
+                        description=f"[green]✓ {repo_name} ({n_findings} findings)",
+                    )
+                elif status in ("clone_failed", "skipped"):
+                    progress.update(
+                        scan_task,
+                        advance=1,
+                        description=f"[yellow]⚠ {repo_name} — {status}",
+                    )
+                else:
+                    progress.update(
+                        scan_task,
+                        advance=1,
+                        description=f"[red]✗ {repo_name} — error",
+                    )
+
+    # ── Final cleanup ─────────────────────────────────────────────────────────
+    shutil.rmtree(temp_root, ignore_errors=True)
+
+    # ── Build aggregated report ───────────────────────────────────────────────
+    aggregated_report = Report(
+        scan_target=f"GitHub Org: {org}",
+        scanner_name="RuleEngine",
+        metadata={
+            "org_name": org,
+            "repos_scanned_count": len([r for r in all_repo_results if r["status"] == "scanned"]),
+            "repos_failed": len(
+                [r for r in all_repo_results if r["status"] in ("clone_failed", "error")]
+            ),
+            "workers_used": workers,
+        },
+    )
+
+    for result in all_repo_results:
+        for finding in result.get("findings", []):
+            aggregated_report.add_finding(finding)
+
+    # Filter by severity
     filtered_report = Report(
         scan_target=aggregated_report.scan_target,
         scanner_name=aggregated_report.scanner_name,
@@ -1318,7 +1495,58 @@ def scan_org(
             filtered_report.add_finding(finding)
     report = filtered_report
 
-    # Resolve fail-on threshold
+    # ── Per-repo summary table ────────────────────────────────────────────────
+    summary_table = RichTable(
+        title=f"[bold]Repository Scan Summary — {org}[/bold]",
+        title_justify="left",
+        show_header=True,
+        header_style="bold cyan",
+    )
+    summary_table.add_column("Repository", style="cyan")
+    summary_table.add_column("Status", justify="center")
+    summary_table.add_column("Files", justify="right")
+    summary_table.add_column("Findings", justify="right")
+    summary_table.add_column("Highest Severity", justify="center")
+
+    for result in sorted(all_repo_results, key=lambda r: r["name"]):
+        name = result["name"]
+        status = result["status"]
+        findings = result.get("findings", [])
+        files = result.get("files_scanned", 0)
+
+        status_display = {
+            "scanned": "[green]✓ scanned[/green]",
+            "clone_failed": "[yellow]⚠ clone failed[/yellow]",
+            "skipped": "[dim]skipped[/dim]",
+            "error": "[red]✗ error[/red]",
+        }.get(status, status)
+
+        sev_map = {"CRITICAL": "bold red", "HIGH": "red", "MEDIUM": "yellow", "LOW": "blue", "INFO": "dim"}
+        highest_sev = ""
+        if findings:
+            top = max(findings, key=lambda f: f.severity)
+            sev_name = top.severity.name
+            highest_sev = f"[{sev_map.get(sev_name, 'white')}]{sev_name}[/{sev_map.get(sev_name, 'white')}]"
+
+        summary_table.add_row(
+            name,
+            status_display,
+            str(files),
+            f"[{'red' if findings else 'green'}]{len(findings)}[/{'red' if findings else 'green'}]",
+            highest_sev or "[green]Clean[/green]",
+        )
+
+    console.print()
+    console.print(summary_table)
+
+    if per_repo_reports:
+        console.print(
+            f"\n[dim]📁 Per-repo reports saved to:[/dim] [cyan]{org_reports_dir}[/cyan]"
+        )
+
+    console.print()
+
+    # ── Resolve fail-on threshold ─────────────────────────────────────────────
     fail_on_severity: Severity | None = None
     if fail_on:
         try:
@@ -1330,15 +1558,13 @@ def scan_org(
             )
             raise typer.Exit(code=1)
 
-    # Output results
+    # ── Output aggregated results ─────────────────────────────────────────────
     if fmt.lower() == "json":
         from phoenixsec.reporters.json_reporter import JsonReporter
 
         reporter = JsonReporter()
         print(json.dumps(reporter.generate_dict(report), indent=2, default=str))
     elif fmt.lower() == "html":
-        import time
-
         from phoenixsec.reporters.html import HtmlReporter
 
         reporter = HtmlReporter(cfg.reporting)
@@ -1349,8 +1575,6 @@ def scan_org(
             f"[green]HTML organization report successfully saved to: {saved_path}[/green]"
         )
     elif fmt.lower() == "sarif":
-        import time
-
         from phoenixsec.reporters.sarif import SarifReporter
 
         reporter = SarifReporter(cfg.reporting)

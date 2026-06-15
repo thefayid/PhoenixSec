@@ -14,8 +14,8 @@ var/
 sdist/
 develop-eggs/
 .installed.cfg
-lib/
-lib64/
+/lib/
+/lib64/
 
 # ── Virtual Environments ──────────────────────────────────
 .venv/
@@ -60,8 +60,8 @@ dmypy.json
 Thumbs.db
 
 # ── PhoenixSec Generated Output ──────────────────────────
-reports/
-logs/
+/reports/
+/logs/
 *.report.json
 *.report.html
 *.report.txt
