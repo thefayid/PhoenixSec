@@ -1,0 +1,47 @@
+rules:
+  - id: semgrep-sqli-python
+    patterns:
+      - pattern-either:
+          - pattern: $CUR.execute(f"...")
+          - pattern: $CUR.execute("..." + $VAR)
+          - pattern: $QUERY = f"SELECT * FROM users WHERE id = '{$VAR}'"
+          - pattern: $QUERY = f"SELECT * FROM users WHERE id = {$VAR}"
+          - pattern: $QUERY = "SELECT * FROM users WHERE id = " + $VAR
+    message: Python SQL Injection detected
+    languages: [python]
+    severity: ERROR
+
+  - id: semgrep-sqli-java
+    patterns:
+      - pattern-either:
+          - pattern: $STMT.executeQuery("..." + $VAR)
+          - pattern: $STMT.executeUpdate("..." + $VAR)
+          - pattern: $STMT.execute("..." + $VAR)
+          - pattern: $QUERY = "SELECT * FROM users WHERE username = '" + $VAR + "';"
+    message: Java SQL Injection detected
+    languages: [java]
+    severity: ERROR
+
+  - id: semgrep-cmd-python
+    patterns:
+      - pattern-either:
+          - pattern: os.system("..." + $VAR)
+          - pattern: os.system($VAR)
+          - pattern: subprocess.run("..." + $VAR, shell=True)
+          - pattern: subprocess.run(f"...", shell=True)
+          - pattern: subprocess.run($VAR, shell=True)
+          - pattern: $CMD = "ping -c 1 " + $VAR
+          - pattern: $CMD = "nslookup " + $VAR
+    message: Python Command Injection detected
+    languages: [python]
+    severity: ERROR
+
+  - id: semgrep-secrets
+    patterns:
+      - pattern-either:
+          - pattern: $KEY = "sk-proj-$ANY"
+          - pattern: $KEY = "AKIA$ANY"
+          - pattern: $KEY = "jwt_token_$ANY"
+    message: Hardcoded secret detected
+    languages: [python, java]
+    severity: ERROR

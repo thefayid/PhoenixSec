@@ -1,0 +1,48 @@
+{
+  "name": "phoenixsec",
+  "displayName": "PhoenixSec Security Scanner",
+  "description": "Autonomous security scanner for SQLi, XSS, Command Injection, Secrets, and dependency vulnerabilities.",
+  "version": "0.1.0",
+  "publisher": "phoenixsec",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Linters",
+    "Security"
+  ],
+  "activationEvents": [
+    "onLanguage:python",
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onLanguage:java",
+    "onLanguage:go",
+    "onLanguage:php"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "phoenixsec.scan",
+        "title": "PhoenixSec: Scan Current File"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "PhoenixSec Configuration",
+      "properties": {
+        "phoenixsec.executablePath": {
+          "type": "string",
+          "default": "phoenixsec",
+          "description": "Path to the phoenixsec CLI executable."
+        },
+        "phoenixsec.severity": {
+          "type": "string",
+          "default": "LOW",
+          "enum": ["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+          "description": "Minimum severity of findings to display."
+        }
+      }
+    }
+  }
+}

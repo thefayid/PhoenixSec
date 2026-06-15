@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────
+#  PhoenixSec — Runtime Configuration
+#  All values here are DEFAULTS. Override via env vars:
+#    PHOENIXSEC_LOG_LEVEL=DEBUG
+#    PHOENIXSEC_OUTPUT_DIR=./results
+# ─────────────────────────────────────────────────────────
+
+logging:
+  level: "INFO"           # DEBUG | INFO | WARNING | ERROR | CRITICAL
+  json_mode: false        # true = structured JSON (for CI/CD pipelines)
+  log_file: null          # null = stdout only; or a path e.g. "logs/phoenixsec.log"
+
+scanning:
+  max_file_size_kb: 512   # Skip files larger than this
+  exclude_dirs:           # Directories to skip during scans
+    - ".git"
+    - ".venv"
+    - "venv"
+    - "node_modules"
+    - "__pycache__"
+    - ".mypy_cache"
+    - ".ruff_cache"
+    - "dist"
+    - "build"
+  exclude_extensions:     # File extensions to skip
+    - ".pyc"
+    - ".pyo"
+    - ".egg"
+    - ".so"
+    - ".dll"
+  min_severity: "LOW"     # Minimum severity to report: INFO | LOW | MEDIUM | HIGH | CRITICAL
+
+reporting:
+  output_dir: "./reports"
+  default_format: "text"  # text | json | html (html in later phases)
+  include_snippets: true  # Include source code snippets in reports
+  snippet_context_lines: 3
+
+patching:
+  enabled: false          # Auto-patching disabled by default (Phase 3+)
+  dry_run: true           # When enabled, preview patches without applying
+  backup: true            # Back up files before patching

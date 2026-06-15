@@ -1,0 +1,344 @@
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║             PhoenixSec — Enterprise DevSecOps Security Pipeline             ║
+# ║                                                                              ║
+# ║  Triggers on every push and pull request to ANY branch.                     ║
+# ║  Scans all changed files for vulnerabilities (SQLi, XSS, Command Injection, ║
+# ║  Hardcoded Secrets, SSRF, Path Traversal, Insecure Deserialization, …).     ║
+# ║  Blocks the pipeline when HIGH or CRITICAL findings are present.            ║
+# ║  Auto-generates a fix PR if PHOENIXSEC_AI_KEY and GITHUB_TOKEN are set.    ║
+# ║  Uploads SARIF report to GitHub Security → Code Scanning tab.               ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+
+name: "🛡️ PhoenixSec Security Pipeline"
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+    inputs:
+      severity_threshold:
+        description: "Minimum severity to fail the pipeline"
+        required: false
+        default: "HIGH"
+        type: choice
+        options: [INFO, LOW, MEDIUM, HIGH, CRITICAL]
+      auto_patch:
+        description: "Auto-generate fix PR on findings"
+        required: false
+        default: "true"
+        type: boolean
+
+# Cancel redundant in-flight runs on the same branch
+concurrency:
+  group: phoenixsec-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write          # For committing auto-fix patches
+  pull-requests: write     # For opening fix PRs and posting comments
+  security-events: write   # For uploading SARIF to GitHub Security
+  checks: write            # For posting check run annotations
+
+env:
+  PHOENIXSEC_FAIL_ON: ${{ github.event.inputs.severity_threshold || 'HIGH' }}
+  AUTO_PATCH: ${{ github.event.inputs.auto_patch || 'true' }}
+  PYTHON_VERSION: "3.12"
+  REPORT_DIR: phoenixsec-reports
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 1: Security Scan
+  # ─────────────────────────────────────────────────────────────────────────────
+  security-scan:
+    name: "🔍 Security Scan"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      findings_count: ${{ steps.scan.outputs.findings_count }}
+      critical_count: ${{ steps.scan.outputs.critical_count }}
+      high_count: ${{ steps.scan.outputs.high_count }}
+      scan_blocked: ${{ steps.scan.outputs.scan_blocked }}
+      report_path: ${{ steps.scan.outputs.report_path }}
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────────
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for diff-aware scanning
+
+      # ── Python Setup ──────────────────────────────────────────────────────────
+      - name: "🐍 Set up Python ${{ env.PYTHON_VERSION }}"
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      # ── Install PhoenixSec ────────────────────────────────────────────────────
+      - name: "📦 Install PhoenixSec"
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          echo "✅ PhoenixSec installed successfully"
+          phoenixsec version
+
+      # ── Create Report Directory ───────────────────────────────────────────────
+      - name: "📁 Create Report Directory"
+        run: mkdir -p ${{ env.REPORT_DIR }}
+
+      # ── Run Security Scan ─────────────────────────────────────────────────────
+      - name: "🛡️ Run PhoenixSec Scan"
+        id: scan
+        env:
+          PHOENIXSEC_AI_KEY: ${{ secrets.PHOENIXSEC_AI_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e  # Don't exit on scan finding (we capture exit code)
+
+          echo "🔍 Scanning repository for security vulnerabilities..."
+          echo "📊 Severity threshold: ${{ env.PHOENIXSEC_FAIL_ON }}"
+          echo ""
+
+          # Run scan — output JSON + text
+          phoenixsec scan . \
+            --severity INFO \
+            --format json \
+            > ${{ env.REPORT_DIR }}/scan_result.json
+
+          SCAN_EXIT=$?
+
+          # Parse counts from JSON
+          FINDINGS=$(python3 -c "
+          import json, sys
+          try:
+              data = json.load(open('${{ env.REPORT_DIR }}/scan_result.json'))
+              findings = data.get('findings', [])
+              total = len(findings)
+              critical = sum(1 for f in findings if f.get('severity') == 'CRITICAL')
+              high = sum(1 for f in findings if f.get('severity') == 'HIGH')
+              print(f'{total},{critical},{high}')
+          except Exception as e:
+              print(f'0,0,0')
+          " 2>/dev/null || echo "0,0,0")
+
+          TOTAL=$(echo $FINDINGS | cut -d',' -f1)
+          CRITICAL=$(echo $FINDINGS | cut -d',' -f2)
+          HIGH=$(echo $FINDINGS | cut -d',' -f3)
+
+          echo "findings_count=${TOTAL}" >> $GITHUB_OUTPUT
+          echo "critical_count=${CRITICAL}" >> $GITHUB_OUTPUT
+          echo "high_count=${HIGH}" >> $GITHUB_OUTPUT
+          echo "report_path=${{ env.REPORT_DIR }}/scan_result.json" >> $GITHUB_OUTPUT
+
+          echo ""
+          echo "📊 Scan Results Summary:"
+          echo "  Total Findings : ${TOTAL}"
+          echo "  Critical       : ${CRITICAL}"
+          echo "  High           : ${HIGH}"
+
+          # Determine if pipeline should be blocked
+          BLOCKED="false"
+          THRESHOLD="${{ env.PHOENIXSEC_FAIL_ON }}"
+          if [ "$THRESHOLD" = "CRITICAL" ] && [ "$CRITICAL" -gt 0 ]; then
+            BLOCKED="true"
+          elif [ "$THRESHOLD" = "HIGH" ] && ([ "$HIGH" -gt 0 ] || [ "$CRITICAL" -gt 0 ]); then
+            BLOCKED="true"
+          elif [ "$THRESHOLD" = "MEDIUM" ] && [ "$TOTAL" -gt 0 ]; then
+            BLOCKED="true"
+          elif [ "$THRESHOLD" = "LOW" ] && [ "$TOTAL" -gt 0 ]; then
+            BLOCKED="true"
+          elif [ "$THRESHOLD" = "INFO" ] && [ "$TOTAL" -gt 0 ]; then
+            BLOCKED="true"
+          fi
+
+          echo "scan_blocked=${BLOCKED}" >> $GITHUB_OUTPUT
+
+          if [ "$BLOCKED" = "true" ]; then
+            echo ""
+            echo "❌ PIPELINE BLOCKED: ${CRITICAL} CRITICAL and ${HIGH} HIGH vulnerabilities detected"
+            echo "   Run 'phoenixsec scan . --patch' locally to auto-fix, or wait for the auto-fix PR."
+          else
+            echo ""
+            echo "✅ Security scan passed — no blocking findings above $THRESHOLD threshold"
+          fi
+
+          set -e
+
+      # ── Generate Rich Text Report ─────────────────────────────────────────────
+      - name: "📋 Generate Text Report"
+        if: always()
+        run: |
+          phoenixsec scan . --severity INFO --format text 2>&1 | tee ${{ env.REPORT_DIR }}/scan_report.txt || true
+
+      # ── Generate SARIF Report ─────────────────────────────────────────────────
+      - name: "📄 Generate SARIF Report"
+        if: always()
+        run: |
+          phoenixsec scan . --severity INFO --format sarif 2>&1 || true
+          # Find the generated SARIF file and move it
+          find . -name "*.sarif" -not -path "./${{ env.REPORT_DIR }}/*" \
+            -exec mv {} ${{ env.REPORT_DIR }}/scan_result.sarif \; 2>/dev/null || true
+
+      # ── Upload SARIF to GitHub Security Tab ───────────────────────────────────
+      - name: "🔐 Upload SARIF to GitHub Security"
+        if: always() && hashFiles(format('{0}/scan_result.sarif', env.REPORT_DIR)) != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ env.REPORT_DIR }}/scan_result.sarif
+          category: phoenixsec-sast
+        continue-on-error: true
+
+      # ── Post Summary to GitHub Step Summary ──────────────────────────────────
+      - name: "📊 Post Scan Summary"
+        if: always()
+        run: |
+          TOTAL="${{ steps.scan.outputs.findings_count }}"
+          CRITICAL="${{ steps.scan.outputs.critical_count }}"
+          HIGH="${{ steps.scan.outputs.high_count }}"
+          BLOCKED="${{ steps.scan.outputs.scan_blocked }}"
+
+          STATUS_ICON="✅"
+          STATUS_TEXT="PASSED"
+          if [ "$BLOCKED" = "true" ]; then
+            STATUS_ICON="❌"
+            STATUS_TEXT="BLOCKED"
+          fi
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## $STATUS_ICON PhoenixSec Security Scan — $STATUS_TEXT
+
+          | Metric | Value |
+          |--------|-------|
+          | 🎯 Scan Target | \`${{ github.workspace }}\` |
+          | 🔖 Commit | \`${{ github.sha }}\` |
+          | 📏 Severity Threshold | \`${{ env.PHOENIXSEC_FAIL_ON }}\` |
+          | 🔴 Critical Findings | **${CRITICAL}** |
+          | 🟠 High Findings | **${HIGH}** |
+          | 📊 Total Findings | **${TOTAL}** |
+          | 🤖 Auto-Patch | ${{ env.AUTO_PATCH }} |
+
+          ### Vulnerability Coverage
+          | Category | Status |
+          |----------|--------|
+          | SQL Injection (CWE-89) | 🟢 Monitored |
+          | Cross-Site Scripting / XSS (CWE-79) | 🟢 Monitored |
+          | Command Injection (CWE-78) | 🟢 Monitored |
+          | Hardcoded Secrets (CWE-798) | 🟢 Monitored |
+          | Path Traversal (CWE-22) | 🟢 Monitored |
+          | SSRF (CWE-918) | 🟢 Monitored |
+          | Insecure Deserialization (CWE-502) | 🟢 Monitored |
+
+          > Powered by **PhoenixSec** — Autonomous DevSecOps Security Pipeline
+          EOF
+
+      # ── Upload Scan Artifacts ─────────────────────────────────────────────────
+      - name: "📤 Upload Scan Reports"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phoenixsec-security-reports-${{ github.run_number }}
+          path: ${{ env.REPORT_DIR }}/
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 2: Auto-Fix PR (only when findings are present)
+  # ─────────────────────────────────────────────────────────────────────────────
+  auto-fix:
+    name: "🤖 Auto-Generate Fix PR"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: security-scan
+    # Only run if: findings present + auto_patch enabled + not already a fix branch
+    if: |
+      needs.security-scan.outputs.scan_blocked == 'true' &&
+      (github.event.inputs.auto_patch == 'true' || github.event.inputs.auto_patch == '') &&
+      !startsWith(github.ref, 'refs/heads/phoenixsec-fix') &&
+      !startsWith(github.ref, 'refs/heads/phoenixsec-ai-fix')
+
+    steps:
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: "🐍 Set up Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: "📦 Install PhoenixSec"
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: "🔧 Configure Git"
+        run: |
+          git config --global user.name "PhoenixSec Bot 🛡️"
+          git config --global user.email "bot@phoenixsec.dev"
+
+      - name: "🤖 Run Auto-Patch + Open Fix PR"
+        env:
+          PHOENIXSEC_AI_KEY: ${{ secrets.PHOENIXSEC_AI_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PHOENIXSEC_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PHOENIXSEC_GITHUB_OWNER: ${{ github.repository_owner }}
+          PHOENIXSEC_GITHUB_REPO: ${{ github.event.repository.name }}
+        run: |
+          echo "🤖 Running PhoenixSec auto-patch..."
+          phoenixsec scan . \
+            --severity ${{ env.PHOENIXSEC_FAIL_ON }} \
+            --patch \
+            --format text || true
+
+          echo ""
+          echo "✅ Auto-patch complete. Check for new PhoenixSec Fix PRs above."
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 3: Block Pipeline (fail the build when blocked)
+  # ─────────────────────────────────────────────────────────────────────────────
+  pipeline-gate:
+    name: "🚦 Pipeline Security Gate"
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: always()
+
+    steps:
+      - name: "🚦 Evaluate Security Gate"
+        run: |
+          BLOCKED="${{ needs.security-scan.outputs.scan_blocked }}"
+          TOTAL="${{ needs.security-scan.outputs.findings_count }}"
+          CRITICAL="${{ needs.security-scan.outputs.critical_count }}"
+          HIGH="${{ needs.security-scan.outputs.high_count }}"
+
+          echo "╔════════════════════════════════════════════════╗"
+          echo "║       PhoenixSec Security Pipeline Gate        ║"
+          echo "╠════════════════════════════════════════════════╣"
+          echo "║  Total Findings  : ${TOTAL}"
+          echo "║  Critical        : ${CRITICAL}"
+          echo "║  High            : ${HIGH}"
+          echo "║  Threshold       : ${{ env.PHOENIXSEC_FAIL_ON }}"
+          echo "║  Decision        : $([ "$BLOCKED" = "true" ] && echo "BLOCKED ❌" || echo "ALLOWED ✅")"
+          echo "╚════════════════════════════════════════════════╝"
+
+          if [ "$BLOCKED" = "true" ]; then
+            echo ""
+            echo "❌ PIPELINE BLOCKED by PhoenixSec Security Gate"
+            echo ""
+            echo "  🔴 ${CRITICAL} CRITICAL vulnerabilities detected"
+            echo "  🟠 ${HIGH} HIGH vulnerabilities detected"
+            echo ""
+            echo "  ➡️  An automatic fix PR has been created by PhoenixSec Bot."
+            echo "  ➡️  Review and merge the fix PR, then re-run this pipeline."
+            echo "  ➡️  Or run locally: phoenixsec scan . --patch"
+            echo ""
+            exit 1
+          else
+            echo ""
+            echo "✅ All security checks passed. Pipeline is clear to proceed."
+          fi

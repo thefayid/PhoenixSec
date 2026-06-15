@@ -1,0 +1,53 @@
+[
+  {
+    "file_path": "benchmarks/python_vuln.py",
+    "expected_findings": [
+      {
+        "line_number": 7,
+        "rule_id": "PY-SQLI-001"
+      },
+      {
+        "line_number": 11,
+        "rule_id": "PY-CMD-001"
+      }
+    ]
+  },
+  {
+    "file_path": "benchmarks/python_clean.py",
+    "expected_findings": []
+  },
+  {
+    "file_path": "benchmarks/go_vuln.go",
+    "expected_findings": [
+      {
+        "line_number": 10,
+        "rule_id": "GO-SQLI-001"
+      },
+      {
+        "line_number": 15,
+        "rule_id": "GO-CMD-001"
+      }
+    ]
+  },
+  {
+    "file_path": "benchmarks/go_clean.go",
+    "expected_findings": []
+  },
+  {
+    "file_path": "benchmarks/php_vuln.php",
+    "expected_findings": [
+      {
+        "line_number": 4,
+        "rule_id": "PHP-SQLI-001"
+      },
+      {
+        "line_number": 8,
+        "rule_id": "PHP-CMD-001"
+      }
+    ]
+  },
+  {
+    "file_path": "benchmarks/php_clean.php",
+    "expected_findings": []
+  }
+]

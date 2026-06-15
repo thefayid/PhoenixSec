@@ -1,0 +1,80 @@
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# ── Virtual Environments ──────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.Python
+
+# ── Distribution / Packaging ──────────────────────────────
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ── Testing ───────────────────────────────────────────────
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# ── Linting / Type Checking ───────────────────────────────
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+
+# ── Editors ───────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── PhoenixSec Generated Output ──────────────────────────
+reports/
+logs/
+*.report.json
+*.report.html
+*.report.txt
+
+# ── Secrets / Keys (never commit these) ──────────────────
+.env
+.env.*
+*.pem
+*.key
+*.crt
+secrets.yaml
+
+# ── OS ────────────────────────────────────────────────────
+.DS_Store
+ehthumbs.db
+Desktop.ini
