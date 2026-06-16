@@ -201,12 +201,16 @@ class TestConsoleReporter:
         original_val = SemgrepScanner.semgrep_not_installed
         SemgrepScanner.semgrep_not_installed = True
         try:
-            console = Console(record=True, width=100)
+            console = Console(record=True, width=200)
             reporter = ConsoleReporter(console=console)
             reporter.generate(clean_report)
             output = console.export_text()
-            assert "Semgrep not installed" in output
-            assert "pip install semgrep" in output
+            
+            # Remove newlines to avoid any unexpected word-wrap splitting the string
+            normalized_output = output.replace("\n", "")
+            
+            assert "Semgrep not installed" in normalized_output
+            assert "pip install semgrep" in normalized_output
         finally:
             SemgrepScanner.semgrep_not_installed = original_val
 
