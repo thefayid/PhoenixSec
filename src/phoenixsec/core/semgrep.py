@@ -16,6 +16,8 @@ log = get_logger(__name__)
 class SemgrepScanner:
     """Orchestrates running Semgrep scans and parsing JSON output."""
 
+    semgrep_not_installed = False
+
     @staticmethod
     def get_semgrep_bin() -> str:
         """Find the semgrep binary path dynamically."""
@@ -47,6 +49,21 @@ class SemgrepScanner:
         """
         resolved_target = Path(target_path).resolve()
         semgrep_bin = self.get_semgrep_bin()
+
+        # Check if Semgrep is installed
+        is_installed = True
+        if semgrep_bin == "semgrep":
+            if not shutil.which("semgrep"):
+                is_installed = False
+        else:
+            if not Path(semgrep_bin).is_file():
+                is_installed = False
+
+        if not is_installed:
+            SemgrepScanner.semgrep_not_installed = True
+            log.warning("Semgrep not installed — skipping Semgrep-based checks.")
+            return []
+
         rules_path = Path(__file__).parent.parent / "rules" / "semgrep_rules.yaml"
 
         if not rules_path.is_file():

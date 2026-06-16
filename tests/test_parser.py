@@ -295,6 +295,14 @@ class TestReadFile:
 
     @pytest.mark.skipif(sys.platform == "win32", reason="chmod not reliable on Windows")
     def test_read_unreadable_file_raises(self, parser: FileParser, tmp_path: Path) -> None:
+        import os
+
+        try:
+            if os.geteuid() == 0:
+                pytest.skip("Permission checks don't apply when running as root")
+        except AttributeError:
+            pass
+
         f = tmp_path / "secret.py"
         f.write_text("password = 'hunter2'\n")
         f.chmod(0o000)  # No permissions
@@ -392,6 +400,14 @@ class TestValidateFile:
 
     @pytest.mark.skipif(sys.platform == "win32", reason="chmod not reliable on Windows")
     def test_validate_unreadable_raises(self, parser: FileParser, tmp_path: Path) -> None:
+        import os
+
+        try:
+            if os.geteuid() == 0:
+                pytest.skip("Permission checks don't apply when running as root")
+        except AttributeError:
+            pass
+
         f = tmp_path / "private.py"
         f.write_text("secret = 1\n")
         f.chmod(0o000)

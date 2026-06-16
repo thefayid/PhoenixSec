@@ -63,6 +63,12 @@ Developer pushes code with SQLi on line 42
 > pip install -e .
 > ```
 
+> [!TIP]
+> **Optional Dependency**: PhoenixSec can optionally use **Semgrep** for additional static analysis coverage. It is highly recommended to install it:
+> ```bash
+> pip install semgrep
+> ```
+
 ### 2. Scan your code right now
 
 ```bash

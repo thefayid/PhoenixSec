@@ -145,6 +145,15 @@ class ConsoleReporter(BaseReporter):
             )
         )
 
+        from phoenixsec.core.semgrep import SemgrepScanner
+
+        if SemgrepScanner.semgrep_not_installed:
+            c.print(
+                "ℹ️  [bold yellow]Semgrep not installed — skipping Semgrep-based checks. "
+                "Install with `pip install semgrep` for additional coverage.[/bold yellow]"
+            )
+            c.print()
+
         # Print Severity breakdown table
         table = Table(
             title="Severity Breakdown",

@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import BackgroundTasks, FastAPI, HTTPException, status
 from fastapi.responses import HTMLResponse
 
+import phoenixsec
 from phoenixsec.api.schema import (
     DirectScanRequest,
     PatchRequest,
@@ -42,7 +43,7 @@ app = FastAPI(
         "Includes scan, patch, report endpoints AND a GitHub webhook receiver "
         "for real-time push/PR scanning."
     ),
-    version="0.2.0",
+    version=phoenixsec.__version__,
 )
 
 # ── Webhook router ────────────────────────────────────────────────────────────
@@ -132,7 +133,7 @@ def run_background_scan(task_id: str, target_path: Path, min_severity: Severity,
 @app.get("/health", tags=["Status"])
 def health_check() -> dict[str, str]:
     """Health check endpoint to verify API server is responsive."""
-    return {"status": "ok", "service": "PhoenixSec API", "version": "0.1.0"}
+    return {"status": "ok", "service": "PhoenixSec API", "version": phoenixsec.__version__}
 
 
 @app.post("/scan", tags=["Scanning"])
