@@ -205,10 +205,10 @@ class TestConsoleReporter:
             reporter = ConsoleReporter(console=console)
             reporter.generate(clean_report)
             output = console.export_text()
-            
+
             # Remove newlines to avoid any unexpected word-wrap splitting the string
             normalized_output = output.replace("\n", "")
-            
+
             assert "Semgrep not installed" in normalized_output
             assert "pip install semgrep" in normalized_output
         finally:
