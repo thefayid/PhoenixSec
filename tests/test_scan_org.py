@@ -246,7 +246,7 @@ def test_scan_org_pagination_fetches_multiple_pages(mock_urlopen, mock_run):
             "scan-org",
             "org",
             "--max-repos",
-            "2",           # cap at 2 so we don't clone all 101
+            "2",  # cap at 2 so we don't clone all 101
             "--no-sca",
             "--no-per-repo-reports",
             "--format",

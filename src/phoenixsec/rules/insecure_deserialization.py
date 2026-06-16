@@ -149,11 +149,7 @@ _UNTRUSTED_VAR_RE = re.compile(
 
 # ── Safe patterns ─────────────────────────────────────────────────────────────
 _JAVA_SAFE_RE = re.compile(
-    r"\b("
-    r"SafeConstructor"
-    r"|deserializationFilter"
-    r"|ObjectInputFilter"
-    r")\b",
+    r"\b(" r"SafeConstructor" r"|deserializationFilter" r"|ObjectInputFilter" r")\b",
     re.IGNORECASE,
 )
 

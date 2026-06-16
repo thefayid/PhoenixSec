@@ -164,3 +164,17 @@ def test_get_job_status_not_found(client: TestClient) -> None:
     response = client.get("/webhook/jobs/non-existent-job-id")
     assert response.status_code == 404
     assert response.json()["detail"] == "Job not found"
+
+
+def test_scan_code_direct(client: TestClient) -> None:
+    payload = {
+        "code": "cursor.execute(f\"SELECT * FROM users WHERE id = '{user_id}'\")",
+        "language": "python",
+        "file_path": "test.py",
+    }
+    response = client.post("/scan", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_findings"] == 2
+    vuln_types = [f["vulnerability_type"] for f in data["findings"]]
+    assert "SQL Injection" in vuln_types

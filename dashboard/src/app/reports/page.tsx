@@ -49,7 +49,7 @@ export default function ReportsPage() {
     const findings = report.findings || [];
     const hasCritical = findings.some(f => (f.severity || '').toUpperCase() === 'CRITICAL');
     const hasHigh = findings.some(f => (f.severity || '').toUpperCase() === 'HIGH');
-    
+
     if (hasCritical) return 'border-red-900/50 hover:border-red-800 bg-red-950/5';
     if (hasHigh) return 'border-orange-900/50 hover:border-orange-800 bg-orange-950/5';
     return 'border-zinc-800 hover:border-zinc-700 bg-zinc-900/40';

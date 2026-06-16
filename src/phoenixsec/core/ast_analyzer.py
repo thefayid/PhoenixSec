@@ -37,10 +37,8 @@ Thread safety
 from __future__ import annotations
 
 import ast
-import textwrap
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from phoenixsec.core.logger import get_logger
 from phoenixsec.models.finding import Finding, VulnerabilityType
@@ -274,7 +272,9 @@ def _classify_node(
             return TaintInfo(
                 is_tainted=True,
                 reason=f"attribute access '{ast.unparse(node) if hasattr(ast, 'unparse') else obj_name}.{node.attr}' looks user-controlled",
-                source_expr=ast.unparse(node) if hasattr(ast, "unparse") else f"{obj_name}.{node.attr}",
+                source_expr=ast.unparse(node)
+                if hasattr(ast, "unparse")
+                else f"{obj_name}.{node.attr}",
                 line=line,
             )
         return TaintInfo(is_tainted=False)
@@ -496,9 +496,7 @@ class _CommandInjectionChecker(_CallVisitor):
         if short in _CMD_SINKS and node.args:
             # For subprocess.run/call/etc., shell=True greatly increases risk
             uses_shell = any(
-                isinstance(kw.value, ast.Constant)
-                and kw.value.value is True
-                and kw.arg == "shell"
+                isinstance(kw.value, ast.Constant) and kw.value.value is True and kw.arg == "shell"
                 for kw in node.keywords
             )
 

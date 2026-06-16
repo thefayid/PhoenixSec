@@ -47,7 +47,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from phoenixsec.core.exceptions import ReportError
 from phoenixsec.models.finding import Finding
 from phoenixsec.models.vulnerability import Severity
 
@@ -388,6 +387,8 @@ class Report:
                 encoding="utf-8",
             )
         except OSError as exc:
+            from phoenixsec.core.exceptions import ReportError
+
             raise ReportError(
                 f"Failed to write report to {resolved}: {exc}",
                 context={"path": str(resolved)},

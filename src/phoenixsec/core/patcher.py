@@ -90,6 +90,7 @@ class Patcher:
         ssrf_patched = 0
 
         changed_lines_set = set()
+        mutated_lines = set()
         needs_os_import = False
         needs_json_import = False
         needs_html_import = False
@@ -106,6 +107,8 @@ class Patcher:
             line_idx = finding.line_number - 1
 
             if finding.vulnerability_type == VulnerabilityType.HARDCODED_SECRET:
+                if line_idx in mutated_lines:
+                    continue
                 if suffix == ".py":
                     # Python secret remediation
                     line = lines[line_idx]
@@ -120,6 +123,7 @@ class Patcher:
                         )
                         lines[line_idx] = new_line
                         changed_lines_set.add(finding.line_number)
+                        mutated_lines.add(line_idx)
                         secrets_patched += 1
                         patched_count += 1
                         needs_os_import = True
@@ -143,6 +147,7 @@ class Patcher:
                         )
                         lines[line_idx] = new_line
                         changed_lines_set.add(finding.line_number)
+                        mutated_lines.add(line_idx)
                         secrets_patched += 1
                         patched_count += 1
 
@@ -171,6 +176,7 @@ class Patcher:
                             )
                             lines[line_idx] = new_line
                             changed_lines_set.add(finding.line_number)
+                            mutated_lines.add(line_idx)
                             sqli_patched += 1
                             patched_count += 1
                             continue
@@ -195,8 +201,7 @@ class Patcher:
                             def_line = lines[def_line_idx]
                             # Check if f-string definition
                             fstr_match = re.match(
-                                r"^(\s*)([a-zA-Z0-9_]+)(\s*=\s*)f(['\"])(.*?)\4"
-                                r"(\s*(?:#.*)?)$",
+                                r"^(\s*)([a-zA-Z0-9_]+)(\s*=\s*)f(['\"])(.*?)\4" r"(\s*(?:#.*)?)$",
                                 def_line,
                             )
                             if fstr_match:
@@ -227,6 +232,8 @@ class Patcher:
 
                                     changed_lines_set.add(def_line_idx + 1)
                                     changed_lines_set.add(finding.line_number)
+                                    mutated_lines.add(def_line_idx)
+                                    mutated_lines.add(line_idx)
                                     sqli_patched += 1
                                     patched_count += 1
 
@@ -304,12 +311,14 @@ class Patcher:
                                 new_def = f'{lhs}= "{full_literal}";'
                                 lines[def_line_idx] = new_def
                                 changed_lines_set.add(def_line_idx + 1)
+                                mutated_lines.add(def_line_idx)
 
                                 # Comment out statement creation
                                 if stmt_def_idx != -1:
                                     clean_stmt = lines[stmt_def_idx].strip()
                                     lines[stmt_def_idx] = f"{indent}// {clean_stmt}"
                                     changed_lines_set.add(stmt_def_idx + 1)
+                                    mutated_lines.add(stmt_def_idx)
 
                                 # Replace sink line with PreparedStatement execution block
                                 new_block_lines = [
@@ -324,7 +333,7 @@ class Patcher:
                                 indented_block = [f"{indent}{bl}" for bl in new_block_lines]
                                 lines[line_idx] = line_ending.join(indented_block)
                                 changed_lines_set.add(finding.line_number)
-
+                                mutated_lines.add(line_idx)
                                 sqli_patched += 1
                                 patched_count += 1
 
@@ -381,6 +390,7 @@ class Patcher:
                     if patched_line:
                         lines[line_idx] = patched_line
                         changed_lines_set.add(finding.line_number)
+                        mutated_lines.add(line_idx)
                         deserialization_patched += 1
                         patched_count += 1
 
@@ -411,6 +421,7 @@ class Patcher:
                     if patched_line:
                         lines[line_idx] = patched_line
                         changed_lines_set.add(finding.line_number)
+                        mutated_lines.add(line_idx)
                         xss_patched += 1
                         patched_count += 1
 
@@ -453,6 +464,7 @@ class Patcher:
                     if patched_line:
                         lines[line_idx] = patched_line
                         changed_lines_set.add(finding.line_number)
+                        mutated_lines.add(line_idx)
                         path_traversal_patched += 1
                         patched_count += 1
 
@@ -484,6 +496,7 @@ class Patcher:
 
                             lines[line_idx] = new_block
                             changed_lines_set.add(finding.line_number)
+                            mutated_lines.add(line_idx)
                             ssrf_patched += 1
                             patched_count += 1
 

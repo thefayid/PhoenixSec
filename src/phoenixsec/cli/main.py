@@ -826,6 +826,14 @@ def install_hook(
 
 echo "🛡️  PhoenixSec: Scanning staged files for vulnerabilities..."
 
+# Check if phoenixsec is on the PATH
+if ! command -v phoenixsec >/dev/null 2>&1; then
+  echo ""
+  echo "❌ phoenixsec command not found on PATH — hook cannot run. Install it or fix your PATH."
+  echo ""
+  exit 2
+fi
+
 # Get staged files that exist and are supported
 STAGED=$(git diff --cached --name-only --diff-filter=ACM | \\
   grep -E '\\.(py|pyw|java|js|jsx|ts|tsx|go|php|rb)$')
@@ -980,6 +988,67 @@ def webhook(
             ),
             title="[bold magenta]PhoenixSec Webhook Server Starting[/bold magenta]",
             border_style="magenta",
+        )
+    )
+
+    uvicorn.run(
+        "phoenixsec.api.main:app",
+        host=host,
+        port=port,
+        reload=reload,
+        log_level="info",
+    )
+
+
+# ── api command ────────────────────────────────────────────────────────────────
+
+
+@app.command(name="api")
+def api(
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Bind socket to this host."),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", "-p", help="Bind socket to this port."),
+    ] = 8000,
+    reload: Annotated[
+        bool,
+        typer.Option("--reload", help="Enable auto-reload (development mode)."),
+    ] = False,
+) -> None:
+    """Start the PhoenixSec REST API server.
+
+    Exposes the following endpoints:
+      - [bold]GET  /health[/bold]: Health check
+      - [bold]POST /scan[/bold]: Synchronous direct scan on raw code text
+      - [bold]POST /api/scan[/bold]: Synchronous file/directory scan
+      - [bold]POST /api/scan/async[/bold]: Asynchronous file/directory scan
+      - [bold]GET  /api/scan/tasks/{task_id}[/bold]: Retrieve async task status and result
+      - [bold]POST /api/patch[/bold]: Automatically apply vulnerability patches
+    """
+    import uvicorn
+
+    console.print(
+        Panel(
+            Text.assemble(
+                ("🛡️ PhoenixSec REST API Server\n\n", "bold cyan"),
+                ("Listening on  : ", "dim"),
+                (f"http://{host}:{port}\n", "bold white"),
+                ("Health Check  : ", "dim"),
+                ("GET  /health\n", "bold green"),
+                ("Direct Scan   : ", "dim"),
+                ("POST /scan\n", "bold green"),
+                ("Sync Scan     : ", "dim"),
+                ("POST /api/scan\n", "bold green"),
+                ("Async Scan    : ", "dim"),
+                ("POST /api/scan/async\n", "bold green"),
+                ("Apply Patch   : ", "dim"),
+                ("POST /api/patch\n", "bold green"),
+            ),
+            title="[bold cyan]PhoenixSec API Server Starting[/bold cyan]",
+            border_style="cyan",
         )
     )
 
@@ -1236,7 +1305,6 @@ def scan_org(
     import urllib.request
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    from rich.live import Live
     from rich.progress import (
         BarColumn,
         MofNCompleteColumn,
@@ -1368,7 +1436,12 @@ def scan_org(
                 timeout=120,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            return {"name": repo_name, "status": "clone_failed", "findings": [], "error": "git clone failed"}
+            return {
+                "name": repo_name,
+                "status": "clone_failed",
+                "findings": [],
+                "error": "git clone failed",
+            }
 
         try:
             engine = RuleEngine()
@@ -1382,6 +1455,7 @@ def scan_org(
                     except ValueError:
                         rel_path = Path(f.file_path).name
                     from dataclasses import replace
+
                     updated_f = replace(f, file_path=f"[{repo_name}] {rel_path}")
                     repo_findings.append(updated_f)
 
@@ -1521,12 +1595,20 @@ def scan_org(
             "error": "[red]✗ error[/red]",
         }.get(status, status)
 
-        sev_map = {"CRITICAL": "bold red", "HIGH": "red", "MEDIUM": "yellow", "LOW": "blue", "INFO": "dim"}
+        sev_map = {
+            "CRITICAL": "bold red",
+            "HIGH": "red",
+            "MEDIUM": "yellow",
+            "LOW": "blue",
+            "INFO": "dim",
+        }
         highest_sev = ""
         if findings:
             top = max(findings, key=lambda f: f.severity)
             sev_name = top.severity.name
-            highest_sev = f"[{sev_map.get(sev_name, 'white')}]{sev_name}[/{sev_map.get(sev_name, 'white')}]"
+            highest_sev = (
+                f"[{sev_map.get(sev_name, 'white')}]{sev_name}[/{sev_map.get(sev_name, 'white')}]"
+            )
 
         summary_table.add_row(
             name,
@@ -1540,9 +1622,7 @@ def scan_org(
     console.print(summary_table)
 
     if per_repo_reports:
-        console.print(
-            f"\n[dim]📁 Per-repo reports saved to:[/dim] [cyan]{org_reports_dir}[/cyan]"
-        )
+        console.print(f"\n[dim]📁 Per-repo reports saved to:[/dim] [cyan]{org_reports_dir}[/cyan]")
 
     console.print()
 

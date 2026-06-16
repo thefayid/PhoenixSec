@@ -27,7 +27,7 @@ class AIPatcher:
         self._rule_engine = rule_engine or RuleEngine()
 
     def _find_venv_bin(self, bin_name: str) -> Path | None:
-        """Find an executable dynamically within virtual environment folders or current Python prefix."""
+        """Find executable dynamically in venv folders or current Python prefix."""
         import sys
 
         # Check current sys.prefix first
@@ -194,6 +194,10 @@ class AIPatcher:
             # Use scan_code since we don't want Semgrep executing on a
             # non-existent temp file on disk, or we can read the temp file.
             lang = "python" if file_path.suffix.lower() == ".py" else "java"
+            res_orig = self._rule_engine.scan_code(
+                original_code, file_path=str(file_path), language=lang
+            )
+            findings_before = res_orig.findings
             res = self._rule_engine.scan_code(patched_code, file_path=str(file_path), language=lang)
             findings_after = res.findings
 
@@ -216,8 +220,22 @@ class AIPatcher:
             # Check if new high/critical issues introduced
             for f in findings_after:
                 if f.severity >= Severity.HIGH:
-                    # Ignore if the same finding existed before and was not this one
-                    # (but usually we want to be safe)
+                    # Ignore if the same finding existed in the original code
+                    # (with a line tolerance of 20)
+                    existed = False
+                    for fb in findings_before:
+                        if (
+                            fb.vulnerability_type == f.vulnerability_type
+                            and fb.rule_id == f.rule_id
+                        ):
+                            line_before = fb.line_number or 0
+                            line_after = f.line_number or 0
+                            if abs(line_after - line_before) <= 20:
+                                existed = True
+                                break
+                    if existed:
+                        continue
+
                     log.warning(
                         f"AI Patch Validation: Patch introduced new vulnerability "
                         f"{f.vulnerability_type} ({f.severity.name}) in {file_path.name}."
@@ -238,17 +256,16 @@ class AIPatcher:
 
             # Check for configured test command or env variable PHOENIXSEC_TEST_CMD
             test_cmd_env = os.environ.get("PHOENIXSEC_TEST_CMD")
-            if test_cmd_env:
-                import shlex
+            if not test_cmd_env:
+                log.info(
+                    "AI Patch Validation: No test command configured via PHOENIXSEC_TEST_CMD. "
+                    "Skipping step 3 (test execution)."
+                )
+                return True
 
-                cmd_args = shlex.split(test_cmd_env, posix=(os.name == "posix"))
-            else:
-                # Default to project's pytest script if it exists
-                venv_pytest = self._find_venv_bin("pytest")
-                if venv_pytest:
-                    cmd_args = [str(venv_pytest), "tests/test_cli.py"]
-                else:
-                    cmd_args = ["pytest", "tests/test_cli.py"]
+            import shlex
+
+            cmd_args = shlex.split(test_cmd_env, posix=(os.name == "posix"))
 
             # Write patched code temporarily to the actual file for running tests
             file_path.write_text(patched_code, encoding="utf-8")
@@ -306,6 +323,7 @@ class AIPatcher:
                 # Validate the rule-based patch as well to be safe
                 val_ok = self.validate_patch(original_code, rule_patched, file_path, findings[0])
                 if val_ok:
+                    file_path.write_text(rule_patched, encoding="utf-8")
                     return True, rule_patched, False
             except Exception as exc:
                 log.warning(f"AI Patch fallback: Validation of rule-based patch failed: {exc}")

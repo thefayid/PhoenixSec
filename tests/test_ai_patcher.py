@@ -112,8 +112,9 @@ def test_validate_patch_fails_scan(
 
 @patch("subprocess.run")
 def test_validate_patch_fails_test_suite(
-    mock_run: MagicMock, dummy_finding: Finding, tmp_path: Path
+    mock_run: MagicMock, dummy_finding: Finding, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("PHOENIXSEC_TEST_CMD", "pytest")
     file_path = tmp_path / "app.py"
     patcher = AIPatcher()
 
@@ -293,3 +294,109 @@ def test_generate_patch_exhaust_retries_failure(
 
     assert mock_urlopen.call_count == 4
     assert mock_sleep.call_count == 3
+
+
+def test_validate_patch_tolerates_line_shifts(dummy_finding: Finding, tmp_path: Path) -> None:
+    file_path = tmp_path / "app.py"
+    patcher = AIPatcher()
+
+    from phoenixsec.rules.engine import EngineResult
+
+    finding_before = Finding(
+        vulnerability_type=dummy_finding.vulnerability_type,
+        severity=dummy_finding.severity,
+        confidence_score=dummy_finding.confidence_score,
+        recommendation=dummy_finding.recommendation,
+        file_path=dummy_finding.file_path,
+        line_number=3,
+        rule_id=dummy_finding.rule_id,
+    )
+
+    finding_after = Finding(
+        vulnerability_type=dummy_finding.vulnerability_type,
+        severity=dummy_finding.severity,
+        confidence_score=dummy_finding.confidence_score,
+        recommendation=dummy_finding.recommendation,
+        file_path=dummy_finding.file_path,
+        line_number=15,  # shifted by 12 lines (within 20 line tolerance)
+        rule_id=dummy_finding.rule_id,
+    )
+
+    mock_scan = MagicMock()
+    mock_scan.side_effect = [
+        EngineResult(
+            file_path=str(file_path), language="python", findings=[finding_before]
+        ),  # before
+        EngineResult(
+            file_path=str(file_path), language="python", findings=[finding_after]
+        ),  # after
+    ]
+    patcher._rule_engine.scan_code = mock_scan
+
+    result = patcher.validate_patch(
+        original_code="original",
+        patched_code="patched",
+        file_path=file_path,
+        finding=dummy_finding,
+    )
+    assert result
+
+
+def test_validate_patch_flags_newly_introduced_high_severity(
+    dummy_finding: Finding, tmp_path: Path
+) -> None:
+    file_path = tmp_path / "app.py"
+    patcher = AIPatcher()
+
+    from phoenixsec.rules.engine import EngineResult
+
+    finding_after = Finding(
+        vulnerability_type=dummy_finding.vulnerability_type,
+        severity=Severity.HIGH,
+        confidence_score=dummy_finding.confidence_score,
+        recommendation=dummy_finding.recommendation,
+        file_path=dummy_finding.file_path,
+        line_number=35,  # shifted by 32 lines (outside 20 line tolerance)
+        rule_id=dummy_finding.rule_id,
+    )
+
+    mock_scan = MagicMock()
+    mock_scan.side_effect = [
+        EngineResult(file_path=str(file_path), language="python", findings=[]),  # before: empty
+        EngineResult(
+            file_path=str(file_path), language="python", findings=[finding_after]
+        ),  # after: new high severity
+    ]
+    patcher._rule_engine.scan_code = mock_scan
+
+    result = patcher.validate_patch(
+        original_code="original",
+        patched_code="patched",
+        file_path=file_path,
+        finding=dummy_finding,
+    )
+    assert not result
+
+
+@patch("subprocess.run")
+def test_validate_patch_skips_test_execution_by_default(
+    mock_run: MagicMock, dummy_finding: Finding, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("PHOENIXSEC_TEST_CMD", raising=False)
+    file_path = tmp_path / "app.py"
+    patcher = AIPatcher()
+
+    from phoenixsec.rules.engine import EngineResult
+
+    mock_scan = MagicMock()
+    mock_scan.return_value = EngineResult(file_path=str(file_path), language="python", findings=[])
+    patcher._rule_engine.scan_code = mock_scan
+
+    result = patcher.validate_patch(
+        original_code="original",
+        patched_code="patched",
+        file_path=file_path,
+        finding=dummy_finding,
+    )
+    assert result
+    mock_run.assert_not_called()

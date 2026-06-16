@@ -243,3 +243,42 @@ def test_patch_python_deserialization() -> None:
     assert patched == expected
     assert changed == [1, 2]
     assert "secured 1 deserialization" in summary
+
+
+def test_patch_sqli_and_secret_on_same_line() -> None:
+    code = (
+        "query = f\"SELECT * FROM users WHERE username='{username}' AND password='{password}'\"\n"
+        "cursor.execute(query)\n"
+    )
+    # SQL injection on line 2
+    f_sqli = Finding(
+        vulnerability_type=VulnerabilityType.SQL_INJECTION,
+        severity=Severity.CRITICAL,
+        confidence_score=1.0,
+        recommendation="Use parameterized queries.",
+        file_path="app.py",
+        line_number=2,
+        rule_id="PY-SQLI-001",
+    )
+    # False positive secret on line 1
+    f_secret = Finding(
+        vulnerability_type=VulnerabilityType.HARDCODED_SECRET,
+        severity=Severity.CRITICAL,
+        confidence_score=1.0,
+        recommendation="Store secrets in environment variables.",
+        file_path="app.py",
+        line_number=1,
+        rule_id="ALL-SEC-001",
+    )
+
+    patcher = Patcher()
+    patched, summary, changed = patcher.patch(code, [f_sqli, f_secret])
+
+    # Result should parameterize the query (SQLi patch) and SKIP the secret patch on line 1.
+    expected = (
+        'query = "SELECT * FROM users WHERE username=? AND password=?"\n'
+        "cursor.execute(query, (username, password))\n"
+    )
+    assert patched == expected
+    assert "replaced" not in summary  # no secrets replaced
+    assert "parameterised 1 SQL injection" in summary

@@ -1,3 +1,8 @@
+import html
+import json
+
+from werkzeug.utils import secure_filename
+
 """
 PhoenixSec Demo — Intentionally Vulnerable Python Flask App
 
@@ -9,13 +14,11 @@ Run PhoenixSec scan on this file:
 """
 
 import os
-import pickle
+import sqlite3
 import subprocess
 
-from flask import Flask, jsonify, redirect, render_template_string, request
-
-import sqlite3
 import yaml
+from flask import Flask, jsonify, redirect, request
 
 app = Flask(__name__)
 
@@ -24,8 +27,8 @@ app = Flask(__name__)
 # PhoenixSec Rule: PSEC-SECRET-001
 # ──────────────────────────────────────────────────────────────────────────────
 DATABASE_PASSWORD = "super_secret_password_123"  # noqa: S105
-SECRET_KEY = "my_flask_secret_key_hardcoded"      # noqa: S105
-AWS_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"
+SECRET_KEY = "my_flask_secret_key_hardcoded"  # noqa: S105
+AWS_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY")
 STRIPE_API_KEY = "sk-live-abcdef1234567890abcdef1234567890"
 
 
@@ -42,8 +45,8 @@ def get_user():
     cursor = conn.cursor()
 
     # ❌ VULNERABLE: String formatting injects user input directly into SQL
-    query = f"SELECT * FROM users WHERE id = {user_id}"
-    cursor.execute(query)
+    query = "SELECT * FROM users WHERE id = ?"
+    cursor.execute(query, (user_id,))
 
     # ✅ FIXED (what PhoenixSec --patch would generate):
     # cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
@@ -63,8 +66,8 @@ def login():
     cursor = conn.cursor()
 
     # ❌ VULNERABLE: Classic login bypass — ' OR '1'='1
-    query = f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"
-    cursor.execute(query)
+    query = "SELECT * FROM users WHERE username=? AND password=?"
+    cursor.execute(query, (username, password))
 
     user = cursor.fetchone()
     conn.close()
@@ -85,19 +88,18 @@ def greet():
 
     # ❌ VULNERABLE: Jinja2 template with | safe — bypasses auto-escaping
     template = f"<h1>Hello, {name}!</h1><p>Welcome to our app.</p>"
-    return render_template_string(template)
+    return render_template(template)
 
 
 @app.route("/search")
 def search():
     """Vulnerable: search query reflected in response without escaping."""
-    from markupsafe import Markup
 
     query = request.args.get("q", "")
 
-    # ❌ VULNERABLE: Markup() marks user input as safe HTML
-    safe_query = Markup(query)
-    return render_template_string(f"<p>Results for: {safe_query}</p>")
+    # ❌ VULNERABLE: html.escape() marks user input as safe HTML
+    safe_query = html.escape(query)
+    return render_template(f"<p>Results for: {safe_query}</p>")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -112,7 +114,7 @@ def ping():
     # ❌ VULNERABLE: shell=True with user-controlled input
     result = subprocess.run(
         f"ping -c 1 {host}",
-        shell=True,       # noqa: S602
+        shell=True,  # noqa: S602
         capture_output=True,
         text=True,
     )
@@ -140,7 +142,7 @@ def download_file():
 
     # ❌ VULNERABLE: No path validation — attacker can escape base dir
     file_path = os.path.join("/var/app/files", filename)
-    with open(file_path) as f:  # noqa: PTH123
+    with open(secure_filename(file_path)) as f:  # noqa: PTH123
         content = f.read()
 
     return content
@@ -160,6 +162,8 @@ def fetch_url():
     # ❌ VULNERABLE: Attacker can target internal services:
     # /fetch?url=http://169.254.169.254/latest/meta-data/  (AWS metadata)
     # /fetch?url=http://localhost:6379  (Redis)
+    if not target_url.startswith(("http://example.com", "https://example.com")):
+        raise ValueError("Forbidden URL")
     response = requests.get(target_url, timeout=5)
     return jsonify({"status": response.status_code, "body": response.text[:200]})
 
@@ -175,7 +179,7 @@ def deserialize():
 
     # ❌ CRITICAL VULNERABILITY: pickle.loads on user input = RCE
     # Attacker sends: pickle.dumps(os.system('rm -rf /'))
-    obj = pickle.loads(data)  # noqa: S301
+    obj = json.loads(data)  # noqa: S301
     return jsonify({"result": str(obj)})
 
 
@@ -185,7 +189,7 @@ def load_config_route():
     config_data = request.args.get("config", "{}")
 
     # ❌ VULNERABLE: yaml.load without Loader allows arbitrary Python object creation
-    config = yaml.load(config_data)  # noqa: S506
+    config = yaml.safe_load(config_data)  # noqa: S506
     return jsonify({"config": str(config)})
 
 

@@ -78,3 +78,6 @@ secrets.yaml
 .DS_Store
 ehthumbs.db
 Desktop.ini
+
+# ── Nested Contribution Generator ──────────────────────────
+/github-contributions/

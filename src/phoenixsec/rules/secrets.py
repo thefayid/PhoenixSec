@@ -196,6 +196,15 @@ class HardcodedSecretsRule(BaseRule):
             ):
                 continue
 
+            # Skip lines matching SQL statement patterns or python f-strings
+            # with multiple interpolations
+            if re.search(r"\b(SELECT|INSERT|UPDATE|DELETE)\b", line, re.IGNORECASE):
+                continue
+            is_fstring = bool(re.search(r"\bf['\"]", line)) or 'f"""' in line or "f'''" in line
+            has_multiple_interpolations = len(re.findall(r"\{[^}]+\}", line)) >= 2
+            if is_fstring and has_multiple_interpolations:
+                continue
+
             matches: list[_SecretMatch] = []
 
             # 1. AWS Key ID specific check

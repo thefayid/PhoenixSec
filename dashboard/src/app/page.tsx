@@ -184,7 +184,7 @@ export default function OverviewPage() {
       {/* Stats Breakdown Card */}
       <div className="bg-zinc-900/40 border border-zinc-800 rounded-2xl p-6">
         <h4 className="text-sm font-semibold text-zinc-300 font-mono uppercase tracking-wider mb-6">Severity Distribution</h4>
-        
+
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="bg-zinc-950/40 border border-zinc-800/80 rounded-xl p-4 text-center">
             <span className="text-xs font-semibold text-red-500 font-mono uppercase">Critical</span>

@@ -13,6 +13,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, status
 from fastapi.responses import HTMLResponse
 
 from phoenixsec.api.schema import (
+    DirectScanRequest,
     PatchRequest,
     PatchResponse,
     ScanAsyncResponse,
@@ -132,6 +133,37 @@ def run_background_scan(task_id: str, target_path: Path, min_severity: Severity,
 def health_check() -> dict[str, str]:
     """Health check endpoint to verify API server is responsive."""
     return {"status": "ok", "service": "PhoenixSec API", "version": "0.1.0"}
+
+
+@app.post("/scan", tags=["Scanning"])
+def scan_code_direct(request: DirectScanRequest) -> dict[str, Any]:
+    """Perform a synchronous scan on raw code text directly."""
+    try:
+        result = engine.scan_code(
+            request.code,
+            file_path=request.file_path,
+            language=request.language.lower(),
+        )
+        report = Report(
+            scan_target=request.file_path,
+            scanner_name="RuleEngine",
+            metadata={
+                "language": request.language.lower(),
+                "rules_run": result.rules_run,
+                "duration_seconds": result.duration_seconds,
+            },
+        )
+        for finding in result.findings:
+            report.add_finding(finding)
+
+        json_reporter = JsonReporter(config.reporting)
+        return json_reporter.generate_dict(report)
+    except Exception as exc:
+        log.error(f"Direct scan failed: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Direct code scan encountered an error: {exc}",
+        ) from exc
 
 
 @app.post("/api/scan", tags=["Scanning"])
@@ -362,7 +394,8 @@ def apply_patch(request: PatchRequest) -> PatchResponse:
         success, patched_code, is_ai_patch = ai_patcher.patch_with_fallback(file_path, findings)
 
         if success:
-            msg = f"File successfully patched using {'AI-generated patch' if is_ai_patch else 'rule-based patch'} and verified."
+            patch_desc = "AI-generated patch" if is_ai_patch else "rule-based patch"
+            msg = f"File successfully patched using {patch_desc} and verified."
             return PatchResponse(
                 success=True, is_ai_patch=is_ai_patch, message=msg, patched_code=patched_code
             )
@@ -370,14 +403,18 @@ def apply_patch(request: PatchRequest) -> PatchResponse:
             return PatchResponse(
                 success=False,
                 is_ai_patch=False,
-                message="Patch application failed validation checks (syntax compile or re-scan failed).",
+                message=(
+                    "Patch application failed validation checks "
+                    "(syntax compile or re-scan failed)."
+                ),
                 patched_code=None,
             )
 
     except PhoenixSecError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
     except Exception as exc:
         log.error(f"Patching failed with unexpected error: {exc}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Patching failed: {exc}"
-        )
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Patching failed: {exc}",
+        ) from exc

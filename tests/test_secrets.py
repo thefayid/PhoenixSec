@@ -145,6 +145,14 @@ class TestHardcodedSecretsRule:
         code = "db_pass = 'YOUR_PASSWORD_HERE'\napi_token = 'xxxx-xxxx-xxxx-xxxx'\n"
         assert scan_findings(code) == []
 
+    def test_sql_keywords_are_ignored(self) -> None:
+        code = "query = \"SELECT * FROM users WHERE password = 'secretPassword123'\"\n"
+        assert scan_findings(code) == []
+
+    def test_multivalue_fstring_is_ignored(self) -> None:
+        code = "query = f\"SELECT * FROM users WHERE username='{username}' AND password='{password}'\"\n"
+        assert scan_findings(code) == []
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Rule registration & integration

@@ -55,9 +55,13 @@ Developer pushes code with SQLi on line 42
 
 ### 1. Install PhoenixSec
 
-```bash
-pip install phoenixsec
-```
+> [!NOTE]
+> Since this package is not yet published to PyPI, clone the repository and install it in editable mode:
+> ```bash
+> git clone https://github.com/phoenixsec/phoenixsec.git
+> cd phoenixsec
+> pip install -e .
+> ```
 
 ### 2. Scan your code right now
 
@@ -293,6 +297,15 @@ phoenixsec api --host 127.0.0.1 --port 8000
 
 # Start GitHub Webhook server
 phoenixsec webhook --port 8080 --secret <secret> --fail-on HIGH --auto-patch
+
+# Run security scanning benchmark suite and compute precision/performance metrics
+phoenixsec benchmark --dir benchmarks
+
+# Scan all repositories in a GitHub Organization
+phoenixsec scan-org <org> [OPTIONS]
+  --token          GitHub PAT for repository access
+  --workers  -w    Number of parallel workers (default: 4)
+  --max-repos      Maximum repositories to scan
 ```
 
 ---

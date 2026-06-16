@@ -176,9 +176,7 @@ def _extract_sink_var(sink_line: str, language: str) -> str | None:
     else:
         # JavaScript: find what is being assigned/passed
         m = re.search(
-            r"innerHTML\s*=\s*([^;]+)"
-            r"|document\.write\s*\(([^)]+)\)"
-            r"|eval\s*\(([^)]+)\)",
+            r"innerHTML\s*=\s*([^;]+)" r"|document\.write\s*\(([^)]+)\)" r"|eval\s*\(([^)]+)\)",
             sink_line,
             re.IGNORECASE,
         )

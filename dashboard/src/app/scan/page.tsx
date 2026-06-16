@@ -12,7 +12,7 @@ export default function ScanPage() {
   // States
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Sync scan results
   const [report, setReport] = useState<ScanReport | null>(null);
 
@@ -203,7 +203,7 @@ export default function ScanPage() {
               <div className="text-sm font-bold font-mono mt-0.5 text-zinc-200 truncate">{target}</div>
             </div>
           </div>
-          
+
           {taskStatus.status === 'FAILED' && (
             <div className="border border-red-950 bg-red-950/20 text-red-400 p-3 rounded-lg text-xs font-mono">
               Error details: {taskStatus.error}

@@ -117,10 +117,7 @@ _PY_SOURCE_RE = re.compile(
 )
 
 _JS_SOURCE_RE = re.compile(
-    r"\b("
-    r"req\.(body|query|params|headers)"
-    r"|request\.(body|query|params)"
-    r")\b",
+    r"\b(" r"req\.(body|query|params|headers)" r"|request\.(body|query|params)" r")\b",
     re.IGNORECASE,
 )
 

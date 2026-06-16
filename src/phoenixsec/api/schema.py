@@ -58,3 +58,13 @@ class PatchResponse(BaseModel):
     )
     message: str = Field(..., description="Status message explaining patch resolution details.")
     patched_code: str | None = Field(None, description="The corrected source code (if successful).")
+
+
+class DirectScanRequest(BaseModel):
+    """Payload to scan raw code directly."""
+
+    code: str = Field(..., description="Source code text to scan.")
+    language: str = Field(..., description="Source code language (e.g. 'python', 'java').")
+    file_path: str = Field(
+        "app.py", description="Virtual filename/path label for finding location metadata."
+    )

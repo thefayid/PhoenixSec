@@ -6,14 +6,14 @@ import Link from 'next/link';
 
 export default function ReportDetailPage({ params }: { params: Promise<{ filename: string }> }) {
   const { filename } = use(params);
-  
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ScanReport | null>(null);
-  
+
   // Selected finding for side-panel detail view
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
-  
+
   // Patch states
   const [patching, setPatching] = useState(false);
   const [patchResult, setPatchResult] = useState<PatchResponse | null>(null);
@@ -131,7 +131,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ filenam
         {/* Findings List (Left Pane) */}
         <div className="lg:col-span-5 space-y-4">
           <h4 className="text-sm font-semibold text-zinc-400 font-mono uppercase tracking-wider">Findings List</h4>
-          
+
           {report.findings.length === 0 ? (
             <div className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-8 text-center text-zinc-500 font-mono text-sm">
               Clean report. No threats detected.
@@ -275,7 +275,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ filenam
                     {patchResult.success ? '✓ Patch Success' : '✗ Patch Failed'}
                   </div>
                   <div>{patchResult.message}</div>
-                  
+
                   {patchResult.success && patchResult.patched_code && (
                     <div className="space-y-2 mt-2">
                       <div className="text-[10px] text-zinc-500 uppercase">Remediated Code Preview:</div>

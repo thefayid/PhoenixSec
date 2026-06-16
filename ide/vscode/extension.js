@@ -82,7 +82,7 @@ function runScan(document) {
 
                 const message = `[PhoenixSec] ${finding.vulnerability_type} (${finding.rule_id})\n` +
                                 `Remediation: ${finding.recommendation}`;
-                
+
                 const diagnostic = new vscode.Diagnostic(range, message, diagnosticSeverity);
                 diagnostic.source = 'PhoenixSec';
                 diagnostic.code = finding.cwe_id;

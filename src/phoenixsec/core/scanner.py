@@ -12,10 +12,13 @@ Responsibilities
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from phoenixsec.core.logger import get_logger
 from phoenixsec.models.finding import Finding
-from phoenixsec.rules.base_rule import BaseRule
+
+if TYPE_CHECKING:
+    from phoenixsec.rules.base_rule import BaseRule
 
 log = get_logger(__name__)
 
@@ -70,6 +73,8 @@ class Scanner:
         TypeError
             If the rule is not a BaseRule subclass or instance.
         """
+        from phoenixsec.rules.base_rule import BaseRule
+
         if not (
             isinstance(rule, BaseRule) or (isinstance(rule, type) and issubclass(rule, BaseRule))
         ):

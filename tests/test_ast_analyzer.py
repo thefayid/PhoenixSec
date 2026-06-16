@@ -4,8 +4,6 @@ Tests for the AST-based Python security analyzer.
 
 from __future__ import annotations
 
-import pytest
-
 from phoenixsec.core.ast_analyzer import ASTAnalyzer
 from phoenixsec.models.finding import VulnerabilityType
 from phoenixsec.models.vulnerability import Severity
@@ -98,9 +96,7 @@ user_cmd = input("Enter command: ")
 os.system(user_cmd)
 """
         findings = analyzer.analyze(src, "test.py")
-        cmdi = [
-            f for f in findings if f.vulnerability_type == VulnerabilityType.COMMAND_INJECTION
-        ]
+        cmdi = [f for f in findings if f.vulnerability_type == VulnerabilityType.COMMAND_INJECTION]
         assert len(cmdi) >= 1
         assert cmdi[0].rule_id == "AST-PY-CMDI-001"
 
@@ -111,9 +107,7 @@ user_cmd = request.args.get('cmd')
 subprocess.run(user_cmd, shell=True)
 """
         findings = analyzer.analyze(src, "test.py")
-        cmdi = [
-            f for f in findings if f.vulnerability_type == VulnerabilityType.COMMAND_INJECTION
-        ]
+        cmdi = [f for f in findings if f.vulnerability_type == VulnerabilityType.COMMAND_INJECTION]
         assert len(cmdi) >= 1
         assert cmdi[0].severity == Severity.CRITICAL
 
@@ -124,9 +118,7 @@ user_cmd = request.args.get('cmd')
 subprocess.run(user_cmd)
 """
         findings = analyzer.analyze(src, "test.py")
-        cmdi = [
-            f for f in findings if f.vulnerability_type == VulnerabilityType.COMMAND_INJECTION
-        ]
+        cmdi = [f for f in findings if f.vulnerability_type == VulnerabilityType.COMMAND_INJECTION]
         assert len(cmdi) >= 1
         assert cmdi[0].severity == Severity.HIGH
 
@@ -136,9 +128,7 @@ import subprocess
 subprocess.run(['ls', '-la', '/home'])
 """
         findings = analyzer.analyze(src, "test.py")
-        cmdi = [
-            f for f in findings if f.vulnerability_type == VulnerabilityType.COMMAND_INJECTION
-        ]
+        cmdi = [f for f in findings if f.vulnerability_type == VulnerabilityType.COMMAND_INJECTION]
         # List of literals should not flag as tainted
         assert len(cmdi) == 0
 
@@ -190,7 +180,9 @@ obj = pickle.loads(data)
 """
         findings = analyzer.analyze(src, "test.py")
         deser = [
-            f for f in findings if f.vulnerability_type == VulnerabilityType.INSECURE_DESERIALIZATION
+            f
+            for f in findings
+            if f.vulnerability_type == VulnerabilityType.INSECURE_DESERIALIZATION
         ]
         assert len(deser) >= 1
         assert "AST-PY-DESER-001" in [f.rule_id for f in deser]
@@ -202,7 +194,9 @@ data = yaml.load(user_input)
 """
         findings = analyzer.analyze(src, "test.py")
         deser = [
-            f for f in findings if f.vulnerability_type == VulnerabilityType.INSECURE_DESERIALIZATION
+            f
+            for f in findings
+            if f.vulnerability_type == VulnerabilityType.INSECURE_DESERIALIZATION
         ]
         assert len(deser) >= 1
         assert "AST-PY-DESER-002" in [f.rule_id for f in deser]
