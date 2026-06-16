@@ -195,6 +195,21 @@ class TestConsoleReporter:
         assert "PhoenixSec Scan Summary" in content
         assert "SQL Injection" in content
 
+    def test_console_report_semgrep_not_installed_warning(self, clean_report: Report) -> None:
+        from phoenixsec.core.semgrep import SemgrepScanner
+
+        original_val = SemgrepScanner.semgrep_not_installed
+        SemgrepScanner.semgrep_not_installed = True
+        try:
+            console = Console(record=True, width=100)
+            reporter = ConsoleReporter(console=console)
+            reporter.generate(clean_report)
+            output = console.export_text()
+            assert "Semgrep not installed" in output
+            assert "pip install semgrep" in output
+        finally:
+            SemgrepScanner.semgrep_not_installed = original_val
+
 
 class TestCLIIntegration:
     def test_cli_scan_json_output_uses_custom_reporter(self, tmp_path: Path) -> None:
