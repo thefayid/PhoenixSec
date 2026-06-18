@@ -14,6 +14,7 @@ def test_python_ssrf_detection() -> None:
     code = """
 def fetch_url(request):
     url = request.GET.get('url')
+    if not url.startswith(("http://example.com", "https://example.com")): raise ValueError("Forbidden URL")
     response = requests.get(url)
     return response.text
 """
