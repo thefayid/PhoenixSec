@@ -595,7 +595,7 @@ class PythonSQLiRule(BaseRule):
         cursor.execute(query)
 
         # f-string interpolation
-        cursor.execute(f"SELECT * FROM orders WHERE id={order_id}")
+        cursor.execute("SELECT * FROM orders WHERE id=?", (order_id,))
 
         # String concatenation
         cursor.execute("DELETE FROM sessions WHERE token=" + token)
