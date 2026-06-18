@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -88,7 +88,7 @@ def test_create_pull_request_deduplication(
     # Mock git executions
     mock_run.return_value = MagicMock(returncode=0, stdout=b"", stderr=b"")
 
-    content_hash = hashlib.sha256("patched code".encode("utf-8")).hexdigest()[:7]
+    content_hash = hashlib.sha256(b"patched code").hexdigest()[:7]
     expected_branch_name = f"phoenixsec-fix-sql-injection-login-java-{content_hash}"
 
     # Mock HTTP response: GET returns a list of open PRs (one matches the branch)

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import subprocess
 import urllib.request
-import hashlib
 from pathlib import Path
-import typer
 
 from phoenixsec.core.exceptions import PhoenixSecError
 from phoenixsec.core.logger import get_logger
@@ -54,10 +53,11 @@ class GitHubPRAutomation:
 
         if not auto_confirm:
             import sys
+
             import typer
             from rich.console import Console
             console = Console()
-            
+
             if not sys.stdin.isatty():
                 console.print("[yellow]Non-interactive environment detected and --yes not passed — skipping GitHub PR automation. Patch was still applied locally. Pass --yes to enable PR automation in CI/non-interactive contexts.[/yellow]")
                 return None
@@ -87,7 +87,7 @@ class GitHubPRAutomation:
                 if (parent / ".git").is_dir():
                     git_root = parent
                     break
-            
+
             cwd = str(git_root)
 
             # Query the GitHub API to check if an open PR with the head branch already exists

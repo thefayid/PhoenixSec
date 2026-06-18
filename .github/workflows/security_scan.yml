@@ -294,6 +294,7 @@ jobs:
           phoenixsec scan . \
             --severity ${{ env.PHOENIXSEC_FAIL_ON }} \
             --patch \
+            --yes \
             --format text || true
 
           echo ""

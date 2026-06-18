@@ -423,6 +423,7 @@ def apply_patch(request: PatchRequest) -> PatchResponse:
 
 from phoenixsec.api.schema import AnalyzeFPRequest, AnalyzeFPResponse
 
+
 @app.post("/api/analyze-fp", response_model=AnalyzeFPResponse, tags=["Remediation"])
 def analyze_false_positive(request: AnalyzeFPRequest) -> AnalyzeFPResponse:
     """Analyze a finding using AI to determine if it is a false positive."""

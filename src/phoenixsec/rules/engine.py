@@ -45,6 +45,7 @@ from pathlib import Path
 import phoenixsec.rules.ast_rules  # noqa: F401 — AST-level Python analysis
 import phoenixsec.rules.broken_auth  # noqa: F401
 import phoenixsec.rules.command_injection  # noqa: F401
+import phoenixsec.rules.csrf  # noqa: F401
 import phoenixsec.rules.insecure_deserialization  # noqa: F401
 import phoenixsec.rules.ldap_injection  # noqa: F401
 import phoenixsec.rules.misconfiguration  # noqa: F401
@@ -58,7 +59,6 @@ import phoenixsec.rules.weak_crypto  # noqa: F401
 import phoenixsec.rules.xpath_injection  # noqa: F401
 import phoenixsec.rules.xss  # noqa: F401
 import phoenixsec.rules.xxe  # noqa: F401
-import phoenixsec.rules.csrf  # noqa: F401
 from phoenixsec.core.exceptions import ParseError
 from phoenixsec.core.logger import get_logger
 from phoenixsec.models.finding import Finding

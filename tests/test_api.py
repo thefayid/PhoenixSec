@@ -183,7 +183,7 @@ def test_scan_code_direct(client: TestClient) -> None:
 @patch("phoenixsec.core.ai_patcher.AIPatcher.analyze_false_positive")
 def test_analyze_fp_endpoint(mock_analyze: MagicMock, client: TestClient) -> None:
     mock_analyze.return_value = (True, "This is a safe test file.")
-    
+
     payload = {
         "code": "cursor.execute('select * from users')",
         "finding": {

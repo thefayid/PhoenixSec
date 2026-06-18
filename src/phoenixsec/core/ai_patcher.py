@@ -222,7 +222,7 @@ class AIPatcher:
                     text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
                     if not text:
                         raise PhoenixSecError("Gemini API returned empty text response.")
-                    
+
                     try:
                         result = json.loads(text)
                         return result.get("is_false_positive", False), result.get("reasoning", "")

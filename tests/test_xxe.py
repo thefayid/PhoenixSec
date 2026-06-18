@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from phoenixsec.rules.xxe import PythonXXERule, JavaXXERule
+from phoenixsec.rules.xxe import JavaXXERule, PythonXXERule
 
 
 def test_python_xxe_lxml() -> None:
