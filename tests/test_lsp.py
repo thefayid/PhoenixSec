@@ -76,3 +76,35 @@ def test_lsp_did_change(mock_publish) -> None:
     diagnostics = args[1]
     assert len(diagnostics) > 0
     assert any("SQL Injection" in diag.message for diag in diagnostics)
+
+
+def test_lsp_code_action() -> None:
+    from lsprotocol.types import CodeActionParams, CodeActionContext, Diagnostic, Range, Position, CodeActionKind
+    
+    diag = Diagnostic(
+        range=Range(start=Position(line=1, character=0), end=Position(line=1, character=20)),
+        message="Test SQLi",
+        source="PhoenixSec Vibe-Guard",
+        code="PSEC-SQLI-001"
+    )
+    
+    params = CodeActionParams(
+        text_document=TextDocumentItem(
+            uri="file:///test/sqli.py",
+            language_id="python",
+            version=1,
+            text=""
+        ),
+        range=Range(start=Position(line=1, character=0), end=Position(line=1, character=20)),
+        context=CodeActionContext(diagnostics=[diag])
+    )
+    
+    from phoenixsec.lsp.server import code_action
+    actions = code_action(Mock(), params)
+    
+    assert actions is not None
+    assert len(actions) == 1
+    assert actions[0].kind == CodeActionKind.QuickFix
+    assert actions[0].command.command == "phoenixsec.applyFix"
+    assert actions[0].command.arguments[1] == "PSEC-SQLI-001"
+
