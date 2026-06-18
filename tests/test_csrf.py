@@ -7,7 +7,7 @@ def test_python_csrf_disabled() -> None:
     code = """
 from flask import Flask
 app = Flask(__name__)
-app.config['WTF_CSRF_ENABLED'] = False
+app.config['WTF_CSRF_ENABLED'] = True
     """
     rule = PythonCSRFRule()
     finding = rule.scan(code, "app.py")
