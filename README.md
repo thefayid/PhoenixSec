@@ -84,8 +84,11 @@ phoenixsec scan ./src --format json
 # Scan and only fail on HIGH+ severity
 phoenixsec scan ./src --fail-on HIGH
 
-# Scan and auto-generate fix PR
+# Scan and auto-generate fix PR (interactive prompt)
 phoenixsec scan ./src --patch
+
+# Scan and auto-generate fix PR (bypassing interactive confirmation)
+phoenixsec scan ./src --patch --yes
 ```
 
 ### 3. Install the pre-commit git hook
@@ -105,7 +108,7 @@ Create `.github/workflows/security.yml`:
 - name: PhoenixSec Security Scan
   run: |
     pip install phoenixsec
-    phoenixsec scan . --severity LOW --fail-on HIGH --format sarif
+    phoenixsec scan . --severity LOW --fail-on HIGH --patch --yes --format sarif
 ```
 
 ---
@@ -223,6 +226,7 @@ jobs:
             --severity LOW \
             --fail-on HIGH \
             --patch \
+            --yes \
             --format sarif
 
       - name: Upload SARIF
@@ -291,6 +295,7 @@ phoenixsec scan <target> [OPTIONS]
   --format    -f   Output format (text|json|html|sarif)
   --fail-on        Exit 1 only when findings >= this severity
   --patch          Auto-generate fix and open GitHub PR
+  --yes       -y   Skip interactive confirmation prompts for PR creation
 
 # Generate report from saved JSON
 phoenixsec report <result.json> --format html
@@ -403,11 +408,13 @@ Edit `config.yaml` to customize behaviour:
 ```yaml
 scanning:
   min_severity: LOW
-  max_file_size_mb: 10
-  excluded_paths:
+  max_file_size_kb: 512
+  exclude_dirs:
     - ".venv"
     - "node_modules"
     - "__pycache__"
+    - "tests"
+    - "samples"
 
 reporting:
   output_dir: reports/
