@@ -419,3 +419,53 @@ def apply_patch(request: PatchRequest) -> PatchResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Patching failed: {exc}",
         ) from exc
+
+
+from phoenixsec.api.schema import AnalyzeFPRequest, AnalyzeFPResponse
+
+@app.post("/api/analyze-fp", response_model=AnalyzeFPResponse, tags=["Remediation"])
+def analyze_false_positive(request: AnalyzeFPRequest) -> AnalyzeFPResponse:
+    """Analyze a finding using AI to determine if it is a false positive."""
+    f_dict = request.finding
+    try:
+        v_type_str = f_dict.get("vulnerability_type") or f_dict.get("vulnerability") or "Unknown"
+        try:
+            vuln_type = VulnerabilityType(v_type_str)
+        except ValueError:
+            vuln_type = VulnerabilityType.UNKNOWN
+
+        sev_str = f_dict.get("severity") or "INFO"
+        try:
+            severity = Severity.from_string(sev_str)
+        except ValueError:
+            severity = Severity.INFO
+
+        finding = Finding(
+            vulnerability_type=vuln_type,
+            severity=severity,
+            confidence_score=float(f_dict.get("confidence_score") or f_dict.get("confidence", 0.5)),
+            recommendation=f_dict.get("recommendation") or "N/A",
+            file_path=f_dict.get("file_path", "app.py"),
+            line_number=f_dict.get("line_number"),
+            source=f_dict.get("source"),
+            sink=f_dict.get("sink"),
+            rule_id=f_dict.get("rule_id", "UNKNOWN"),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid finding payload layout: {exc}",
+        )
+
+    try:
+        ai_patcher = AIPatcher(rule_engine=engine)
+        is_fp, reasoning = ai_patcher.analyze_false_positive(request.code, finding)
+        return AnalyzeFPResponse(is_false_positive=is_fp, reasoning=reasoning)
+    except PhoenixSecError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
+    except Exception as exc:
+        log.error(f"AI FP Analysis failed with unexpected error: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"AI FP Analysis failed: {exc}",
+        ) from exc

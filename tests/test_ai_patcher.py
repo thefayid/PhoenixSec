@@ -82,7 +82,7 @@ def test_validate_patch_syntax_error(dummy_finding: Finding, tmp_path: Path) -> 
         original_code="def query(request):\n   pass",
         patched_code=invalid_code,
         file_path=file_path,
-        finding=dummy_finding,
+        findings=dummy_finding,
     )
     assert not result
 
@@ -105,7 +105,7 @@ def test_validate_patch_fails_scan(
         original_code=vulnerable_code,
         patched_code=vulnerable_code,
         file_path=file_path,
-        finding=dummy_finding,
+        findings=dummy_finding,
     )
     assert not result
 
@@ -129,7 +129,7 @@ def test_validate_patch_fails_test_suite(
     mock_run.return_value = MagicMock(returncode=1, stderr=b"Failed tests")
 
     result = patcher.validate_patch(
-        original_code="vuln", patched_code=safe_code, file_path=file_path, finding=dummy_finding
+        original_code="vuln", patched_code=safe_code, file_path=file_path, findings=dummy_finding
     )
     assert not result
     mock_run.assert_called_once()
@@ -337,7 +337,7 @@ def test_validate_patch_tolerates_line_shifts(dummy_finding: Finding, tmp_path: 
         original_code="original",
         patched_code="patched",
         file_path=file_path,
-        finding=dummy_finding,
+        findings=dummy_finding,
     )
     assert result
 
@@ -373,7 +373,7 @@ def test_validate_patch_flags_newly_introduced_high_severity(
         original_code="original",
         patched_code="patched",
         file_path=file_path,
-        finding=dummy_finding,
+        findings=dummy_finding,
     )
     assert not result
 
@@ -396,7 +396,7 @@ def test_validate_patch_skips_test_execution_by_default(
         original_code="original",
         patched_code="patched",
         file_path=file_path,
-        finding=dummy_finding,
+        findings=dummy_finding,
     )
     assert result
     mock_run.assert_not_called()

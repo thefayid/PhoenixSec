@@ -282,3 +282,46 @@ def test_patch_sqli_and_secret_on_same_line() -> None:
     assert patched == expected
     assert "replaced" not in summary  # no secrets replaced
     assert "parameterised 1 SQL injection" in summary
+
+
+def test_patch_python_csrf() -> None:
+    code = "app.config['WTF_CSRF_ENABLED'] = False\n"
+    finding = Finding(
+        vulnerability_type=VulnerabilityType.CSRF,
+        severity=Severity.HIGH,
+        confidence_score=1.0,
+        recommendation="Enable CSRF",
+        file_path="app.py",
+        line_number=1,
+    )
+    patcher = Patcher()
+    patched, summary, changed = patcher.patch(code, [finding])
+    expected = "app.config['WTF_CSRF_ENABLED'] = True\n"
+    assert patched == expected
+    assert changed == [1]
+    assert "enabled CSRF protection" in summary
+
+
+def test_patch_java_xxe() -> None:
+    code = (
+        "DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();\n"
+        "DocumentBuilder db = dbf.newDocumentBuilder();\n"
+    )
+    finding = Finding(
+        vulnerability_type=VulnerabilityType.XXE,
+        severity=Severity.HIGH,
+        confidence_score=1.0,
+        recommendation="Disable DTDs",
+        file_path="XML.java",
+        line_number=1,
+    )
+    patcher = Patcher()
+    patched, summary, changed = patcher.patch(code, [finding])
+    expected = (
+        "DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();\n"
+        'dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);\n'
+        "DocumentBuilder db = dbf.newDocumentBuilder();\n"
+    )
+    assert patched == expected
+    assert changed == [1]
+    assert "disabled XML external entities" in summary

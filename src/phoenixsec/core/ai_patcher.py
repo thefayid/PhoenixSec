@@ -154,6 +154,97 @@ class AIPatcher:
                 log.error(f"AI Patch Generation API call failed with unexpected error: {exc}")
                 raise PhoenixSecError(f"AI Patch API Call failed: {exc}") from exc
 
+    def analyze_false_positive(self, code: str, finding: Finding) -> tuple[bool, str]:
+        """Analyze if a finding is a false positive using the Google Gemini API.
+
+        Parameters
+        ----------
+        code : str
+          The source code of the file.
+        finding : Finding
+          The finding to analyze.
+
+        Returns
+        -------
+        tuple[bool, str]
+          Tuple containing (is_false_positive, reasoning_string).
+        """
+        api_key = os.environ.get("PHOENIXSEC_AI_KEY") or os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise PhoenixSecError(
+                "Missing PHOENIXSEC_AI_KEY or GEMINI_API_KEY environment variable."
+            )
+
+        prompt = (
+            "You are an expert security auditor. Your task is to analyze a reported security "
+            "vulnerability and determine if it is a TRUE VULNERABILITY or a FALSE POSITIVE.\n\n"
+            f"Vulnerability Details:\n"
+            f"- Type: {finding.vulnerability_type.value}\n"
+            f"- Line Number: {finding.line_number}\n"
+            f"- Sink: {finding.sink or 'N/A'}\n"
+            f"- Source: {finding.source or 'N/A'}\n\n"
+            "Source Code Context:\n"
+            "```\n"
+            f"{code}\n"
+            "```\n\n"
+            "Instructions:\n"
+            "1. Analyze the data flow from the source to the sink.\n"
+            "2. Consider if there are any sanitizers, validators, or safe contexts (e.g. test files) "
+            "that make this safe in practice.\n"
+            "3. Output your response as a JSON object with exactly two keys:\n"
+            '   - "is_false_positive": boolean (true if false positive, false if genuine vulnerability)\n'
+            '   - "reasoning": string (a brief explanation of your conclusion)\n'
+            "4. Output ONLY valid JSON."
+        )
+
+        base_url = "https://generativelanguage.googleapis.com/v1beta/models"
+        url = f"{base_url}/gemini-1.5-flash:generateContent?key={api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
+        }
+
+        headers = {"Content-Type": "application/json"}
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST"
+        )
+
+        max_retries = 3
+        backoff = 2.0
+        for attempt in range(max_retries + 1):
+            try:
+                with urllib.request.urlopen(req) as response:
+                    res_data = json.loads(response.read().decode("utf-8"))
+                    candidates = res_data.get("candidates", [])
+                    if not candidates:
+                        raise PhoenixSecError("Gemini API returned no candidates.")
+
+                    text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                    if not text:
+                        raise PhoenixSecError("Gemini API returned empty text response.")
+                    
+                    try:
+                        result = json.loads(text)
+                        return result.get("is_false_positive", False), result.get("reasoning", "")
+                    except json.JSONDecodeError:
+                        return False, "Failed to parse JSON reasoning from AI."
+
+            except urllib.error.HTTPError as exc:
+                is_retryable = exc.code == 429 or (500 <= exc.code < 600)
+                if is_retryable and attempt < max_retries:
+                    sleep_time = backoff * (2**attempt)
+                    time.sleep(sleep_time)
+                    continue
+                raise PhoenixSecError(f"AI FP Analysis API Call failed: {exc}") from exc
+            except urllib.error.URLError as exc:
+                if attempt < max_retries:
+                    sleep_time = backoff * (2**attempt)
+                    time.sleep(sleep_time)
+                    continue
+                raise PhoenixSecError(f"AI FP Analysis API Call failed: {exc}") from exc
+            except Exception as exc:
+                raise PhoenixSecError(f"AI FP Analysis API Call failed: {exc}") from exc
+
     def validate_patch(
         self,
         original_code: str,

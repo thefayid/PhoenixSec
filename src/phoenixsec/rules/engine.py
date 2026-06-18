@@ -57,6 +57,8 @@ import phoenixsec.rules.ssrf  # noqa: F401
 import phoenixsec.rules.weak_crypto  # noqa: F401
 import phoenixsec.rules.xpath_injection  # noqa: F401
 import phoenixsec.rules.xss  # noqa: F401
+import phoenixsec.rules.xxe  # noqa: F401
+import phoenixsec.rules.csrf  # noqa: F401
 from phoenixsec.core.exceptions import ParseError
 from phoenixsec.core.logger import get_logger
 from phoenixsec.models.finding import Finding

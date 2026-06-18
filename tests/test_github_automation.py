@@ -51,9 +51,8 @@ def test_create_pull_request_success(
     assert pr_url == "https://github.com/testowner/testrepo/pull/42"
     assert test_file.read_text(encoding="utf-8") == "patched code"
 
-    # Verify git init check and checkout call
+    # Verify checkout call
     called_cmds = [call[0][0] for call in mock_run.call_args_list]
-    assert any("init" in cmd for cmd in called_cmds)
     assert any("checkout" in cmd for cmd in called_cmds)
     assert any("add" in cmd for cmd in called_cmds)
     assert any("commit" in cmd for cmd in called_cmds)

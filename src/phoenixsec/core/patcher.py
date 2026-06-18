@@ -88,6 +88,8 @@ class Patcher:
         xss_patched = 0
         path_traversal_patched = 0
         ssrf_patched = 0
+        csrf_patched = 0
+        xxe_patched = 0
 
         changed_lines_set = set()
         mutated_lines = set()
@@ -500,6 +502,31 @@ class Patcher:
                             ssrf_patched += 1
                             patched_count += 1
 
+            elif finding.vulnerability_type == VulnerabilityType.CSRF:
+                if suffix == ".py":
+                    line = lines[line_idx]
+                    if "WTF_CSRF_ENABLED" in line and "False" in line:
+                        lines[line_idx] = line.replace("False", "True")
+                        changed_lines_set.add(finding.line_number)
+                        mutated_lines.add(line_idx)
+                        csrf_patched += 1
+                        patched_count += 1
+
+            elif finding.vulnerability_type == VulnerabilityType.XXE:
+                if suffix == ".java":
+                    line = lines[line_idx]
+                    if "DocumentBuilderFactory.newInstance()" in line:
+                        indent = re.match(r"^(\s*)", line).group(1)
+                        m = re.match(r"^\s*(?:DocumentBuilderFactory\s+)?([a-zA-Z0-9_]+)\s*=\s*DocumentBuilderFactory\.newInstance\(\)", line)
+                        if m:
+                            var_name = m.group(1)
+                            new_block = f'{line}{line_ending}{indent}{var_name}.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);'
+                            lines[line_idx] = new_block
+                            changed_lines_set.add(finding.line_number)
+                            mutated_lines.add(line_idx)
+                            xxe_patched += 1
+                            patched_count += 1
+
         # Prepend Python imports if needed at the very end
         if suffix == ".py":
             imports_to_add = []
@@ -564,6 +591,10 @@ class Patcher:
             )
         if ssrf_patched > 0:
             summary_parts.append(f"added allowlist validation to {ssrf_patched} SSRF call(s)")
+        if csrf_patched > 0:
+            summary_parts.append(f"enabled CSRF protection for {csrf_patched} finding(s)")
+        if xxe_patched > 0:
+            summary_parts.append(f"disabled XML external entities for {xxe_patched} parser(s)")
 
         if summary_parts:
             summary_str = f"Successfully patched: {', '.join(summary_parts)}."

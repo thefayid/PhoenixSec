@@ -178,3 +178,24 @@ def test_scan_code_direct(client: TestClient) -> None:
     assert data["total_findings"] == 2
     vuln_types = [f["vulnerability_type"] for f in data["findings"]]
     assert "SQL Injection" in vuln_types
+
+
+@patch("phoenixsec.core.ai_patcher.AIPatcher.analyze_false_positive")
+def test_analyze_fp_endpoint(mock_analyze: MagicMock, client: TestClient) -> None:
+    mock_analyze.return_value = (True, "This is a safe test file.")
+    
+    payload = {
+        "code": "cursor.execute('select * from users')",
+        "finding": {
+            "vulnerability_type": "SQL Injection",
+            "severity": "CRITICAL",
+            "file_path": "test.py",
+            "line_number": 1
+        }
+    }
+    response = client.post("/api/analyze-fp", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_false_positive"] is True
+    assert data["reasoning"] == "This is a safe test file."
+    mock_analyze.assert_called_once()

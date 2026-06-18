@@ -68,3 +68,17 @@ class DirectScanRequest(BaseModel):
     file_path: str = Field(
         "app.py", description="Virtual filename/path label for finding location metadata."
     )
+
+
+class AnalyzeFPRequest(BaseModel):
+    """Payload to analyze a finding for false positive."""
+
+    code: str = Field(..., description="Source code text.")
+    finding: dict[str, Any] = Field(..., description="The finding to analyze.")
+
+
+class AnalyzeFPResponse(BaseModel):
+    """Response returned after false-positive analysis."""
+
+    is_false_positive: bool = Field(..., description="True if it is a false positive.")
+    reasoning: str = Field(..., description="Explanation of the AI's conclusion.")

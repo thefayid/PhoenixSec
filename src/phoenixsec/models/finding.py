@@ -74,6 +74,7 @@ class VulnerabilityType(str, Enum):
     SSRF = "Server-Side Request Forgery (SSRF)"
     OPEN_REDIRECT = "Open Redirect"
     CSRF = "Cross-Site Request Forgery (CSRF)"
+    XXE = "XML External Entity (XXE)"
 
     # Data exposure
     HARDCODED_SECRET = "Hardcoded Secret"
