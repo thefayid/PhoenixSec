@@ -21,8 +21,8 @@ public class VulnerableJavaApp extends HttpServlet {
     // PhoenixSec Rule: PSEC-SECRET-001
     // ─────────────────────────────────────────────────────────────────────────
     private static final String DB_PASSWORD = "prod_db_password_2024!";
-    private static final String API_KEY = "AKIAIOSFODNN7EXAMPLE";
-    private static final String JWT_SECRET = "hardcoded_jwt_secret_key_123";
+    private static final String API_KEY = System.getenv("API_KEY");
+    private static final String JWT_SECRET = System.getenv("JWT_SECRET");
     private static final String ENCRYPTION_KEY = "my_aes_encryption_key_256bit!!";
 
 
@@ -41,9 +41,11 @@ public class VulnerableJavaApp extends HttpServlet {
             );
 
             // ❌ VULNERABLE: String concatenation in SQL query
-            String query = "SELECT * FROM users WHERE id = " + userId;
-            Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery(query);
+            String query = "SELECT * FROM users WHERE id = ?";
+            // Statement stmt = conn.createStatement();
+            PreparedStatement pstmt = conn.prepareStatement(query);
+            pstmt.setString(1, userId);
+            ResultSet rs = pstmt.executeQuery();
 
             // ✅ FIXED (what PhoenixSec --patch would generate):
             // String query = "SELECT * FROM users WHERE id = ?";
@@ -72,10 +74,13 @@ public class VulnerableJavaApp extends HttpServlet {
             );
 
             // ❌ VULNERABLE: Classic login bypass via SQLi
-            String query = "SELECT * FROM users WHERE username='" + username +
+            String query = "SELECT * FROM users WHERE username='??";
                            "' AND password='" + password + "'";
-            Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery(query);
+            // Statement stmt = conn.createStatement();
+            PreparedStatement pstmt = conn.prepareStatement(query);
+            pstmt.setString(1, username);
+            pstmt.setString(2, );
+            ResultSet rs = pstmt.executeQuery();
 
             response.getWriter().println(rs.next() ? "Login successful" : "Login failed");
         } catch (SQLException e) {
