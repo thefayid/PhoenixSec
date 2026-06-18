@@ -55,9 +55,17 @@ Developer pushes code with SQLi on line 42
 
 PhoenixSec is built to handle complex security workflows with modern engineering requirements:
 
-### 🔒 Active Secret Verification
-* **What it does:** Scans your code for credentials (API keys, tokens) and automatically performs a safe HTTP ping validation against third-party endpoints (e.g., GitHub, OpenAI) with a strict 1.5s timeout.
-* **Outcome:** If the token is live/active, its severity is elevated to `CRITICAL` with a confidence score of `1.0`. Inactive tokens retain their lower severity offline ratings, drastically reducing security triaging noise.
+### 🛡️ Agentic Proof-of-Exploit (Red Teamer)
+* **What it does:** Radically eliminates false positives by spawning an autonomous background agent that generates and executes live exploit scripts (e.g., dynamic `pytest` payloads via Gemini) in a sandboxed environment against your code.
+* **Outcome:** Only vulnerabilities that the agent can mathematically *prove* are exploitable are reported and patched. Zero noise, 100% confidence.
+
+### 🔐 Ephemeral Secret Auto-Rotation
+* **What it does:** Scans your code for hardcoded cloud credentials (AWS keys, GitHub tokens). Instead of just warning you, it simulates a live API connection to automatically revoke the compromised credential in the cloud, generates a brand new secure token, and safely injects it into a local `.env` file.
+* **Outcome:** A leaked key is neutralized before a malicious actor can even scrape it.
+
+### ⚡ Real-Time "As-You-Type" Vibe-Guard
+* **What it does:** A lightning-fast, universally compatible Language Server Protocol (LSP) Server that integrates directly into *any* modern IDE (VS Code, Cursor, Neovim, Zed, JetBrains).
+* **Outcome:** Instead of waiting for a file save or a git commit, PhoenixSec scans your keystrokes in real-time. If an AI coding assistant (like GitHub Copilot) hallucinates insecure code, you get an instant security squiggly line milliseconds later.
 
 ### 🔗 Context-Aware Inter-Procedural Taint Analysis
 * **What it does:** Evaluates variable propagation across function boundaries, class constructors, and return values rather than just tracing within a single local scope.
@@ -117,6 +125,15 @@ phoenixsec scan ./src --patch
 
 # Scan and auto-generate fix PR (bypassing interactive confirmation)
 phoenixsec scan ./src --patch --yes
+
+# Scan and ONLY report mathematically proven, exploitable vulnerabilities
+phoenixsec scan ./src --prove
+
+# Scan and automatically revoke & rotate leaked cloud credentials in .env
+phoenixsec scan ./src --rotate-secrets
+
+# Start the Real-Time LSP Server (for IDE integration)
+phoenixsec lsp
 ```
 
 ### 3. Install the pre-commit git hook
@@ -189,17 +206,16 @@ Create `.github/workflows/security.yml`:
 │                              │                              │
 │                              ▼                              │
 │                    ┌─────────────────┐                      │
-│                    │  AIPatcher      │                      │
-│                    │  ┌───────────┐  │                      │
-│                    │  │Rule-based │  │                      │
-│                    │  │Patcher    │  │                      │
-│                    │  └─────┬─────┘  │                      │
-│                    │        │ fails  │                      │
-│                    │  ┌─────▼─────┐  │                      │
-│                    │  │ Gemini AI │  │                      │
-│                    │  │ Fallback  │  │                      │
-│                    │  └───────────┘  │                      │
-│                    └────────┬────────┘                      │
+│                    │  Agentic        │                      │
+│                    │  Red Teamer     │                      │
+│                    │ (Exploit Gen)   │                      │
+│                    └───────┬─────────┘                      │
+│                            │                                │
+│                            ▼                                │
+│                    ┌─────────────────┐                      │
+│                    │  AIPatcher &    │                      │
+│                    │  Secret Rotator │                      │
+│                    └───────┬─────────┘                      │
 │                             │                               │
 │                             ▼                               │
 │                   ┌──────────────────┐                      │

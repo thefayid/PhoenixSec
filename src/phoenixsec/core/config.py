@@ -167,6 +167,27 @@ class PatchingConfig(BaseModel):
     )
 
 
+class RedTeamerConfig(BaseModel):
+    """Settings for the Agentic Proof-of-Exploit (Red Teamer)."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable automatic red teaming / exploit generation.",
+    )
+    provider: str = Field(
+        default="gemini",
+        description="AI provider to use for exploit generation.",
+    )
+    model: str = Field(
+        default="gemini-1.5-flash",
+        description="AI model name to request for exploits.",
+    )
+    timeout_seconds: int = Field(
+        default=30,
+        description="Maximum time allowed for an exploit test to run locally.",
+    )
+
+
 # ── Notifiers config models ───────────────────────────────────────────────────
 
 
@@ -220,6 +241,7 @@ class PhoenixSecConfig(BaseSettings):
     scanning: ScanningConfig = Field(default_factory=ScanningConfig)
     reporting: ReportingConfig = Field(default_factory=ReportingConfig)
     patching: PatchingConfig = Field(default_factory=PatchingConfig)
+    red_teamer: RedTeamerConfig = Field(default_factory=RedTeamerConfig)
     notifiers: NotifiersConfig = Field(default_factory=NotifiersConfig)
 
 

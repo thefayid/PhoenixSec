@@ -1,14 +1,33 @@
 const vscode = require('vscode');
 const { exec } = require('child_process');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 let diagnosticCollection;
+let scanTimeout = null;
 
 function activate(context) {
     diagnosticCollection = vscode.languages.createDiagnosticCollection('phoenixsec');
     context.subscriptions.push(diagnosticCollection);
 
-    // Scan on save
+    // Real-Time As-You-Type "Vibe-Guard" Scan
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeTextDocument((event) => {
+            const document = event.document;
+            if (isSupportedLanguage(document)) {
+                // Debounce the real-time scan by 1000ms
+                if (scanTimeout) {
+                    clearTimeout(scanTimeout);
+                }
+                scanTimeout = setTimeout(() => {
+                    runRealTimeScan(document);
+                }, 1000);
+            }
+        })
+    );
+
+    // Also scan on save to ensure final state is captured
     context.subscriptions.push(
         vscode.workspace.onDidSaveTextDocument((document) => {
             if (isSupportedLanguage(document)) {
@@ -85,6 +104,59 @@ function runScan(document) {
             if (diagnostics.length > 0) {
                 vscode.window.showWarningMessage(`PhoenixSec detected ${diagnostics.length} vulnerabilities in ${path.basename(filePath)}.`);
             }
+
+        } catch (e) {
+            // No findings or invalid JSON output (clean run)
+        }
+    });
+}
+
+function runRealTimeScan(document) {
+    const originalExt = path.extname(document.fileName);
+    const tempFilePath = path.join(os.tmpdir(), `phoenixsec_${Date.now()}${originalExt}`);
+    
+    // Write the unsaved document content to the temp file
+    try {
+        fs.writeFileSync(tempFilePath, document.getText(), 'utf8');
+    } catch (err) {
+        console.error('Failed to write temp file for Vibe-Guard scan:', err);
+        return;
+    }
+
+    // Execute scan on the temp file
+    exec(`phoenixsec scan "${tempFilePath}" --format json`, (error, stdout, stderr) => {
+        // Always clean up temp file
+        try {
+            if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+        } catch (e) { /* ignore cleanup errors */ }
+
+        diagnosticCollection.set(document.uri, []); // clear old diagnostics
+
+        if (stderr && stderr.includes('phoenixsec command not found')) {
+            return; // Don't spam warnings on every keystroke
+        }
+
+        try {
+            const data = JSON.parse(stdout);
+            const findings = data.findings || [];
+            const diagnostics = [];
+
+            findings.forEach((finding) => {
+                const line = Math.max(0, (finding.line_number || 1) - 1);
+                const range = new vscode.Range(line, 0, line, 100);
+                const severity = getDiagnosticSeverity(finding.severity);
+                
+                const diag = new vscode.Diagnostic(
+                    range,
+                    `[${finding.severity}] ${finding.vulnerability_type} (${finding.rule_id})\nRecommendation: ${finding.recommendation}`,
+                    severity
+                );
+                diag.source = 'PhoenixSec Vibe-Guard';
+                diag.code = finding.rule_id;
+                diagnostics.push(diag);
+            });
+
+            diagnosticCollection.set(document.uri, diagnostics);
 
         } catch (e) {
             // No findings or invalid JSON output (clean run)

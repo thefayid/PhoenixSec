@@ -231,6 +231,20 @@ def scan(
             help="Disable Software Composition Analysis (SCA) dependency scanning.",
         ),
     ] = False,
+    prove: Annotated[
+        bool,
+        typer.Option(
+            "--prove",
+            help="Use the Agentic Red Teamer to generate exploits and prove vulnerabilities exist.",
+        ),
+    ] = False,
+    rotate_secrets: Annotated[
+        bool,
+        typer.Option(
+            "--rotate-secrets",
+            help="Automatically revoke and rotate any leaked hardcoded secrets.",
+        ),
+    ] = False,
 ) -> None:
     """Scan a file or directory for security vulnerabilities.
 
@@ -430,6 +444,62 @@ def scan(
             filtered_report.add_finding(finding)
     report = filtered_report
 
+    # Agentic Proof-of-Exploit (Red Teamer) Phase
+    if prove or cfg.red_teamer.enabled:
+        from phoenixsec.core.red_teamer import AgenticRedTeamer
+        red_teamer = AgenticRedTeamer(rule_engine=engine, config=cfg)
+        
+        console.print("[bold cyan]🤖 Initiating Agentic Red Teamer (Proof-of-Exploit)...[/bold cyan]")
+        
+        from dataclasses import replace
+        updated_red_teamer_findings = []
+        for finding in report.findings:
+            f_path = Path(finding.file_path)
+            if not f_path.is_file() or f_path.suffix.lower() != ".py":
+                updated_red_teamer_findings.append(finding)
+                continue
+                
+            code_content = f_path.read_text(encoding="utf-8")
+            
+            console.print(f"  [dim]Attempting to prove {finding.vulnerability_type.value} in {f_path.name}:{finding.line_number}[/dim]")
+            is_proven, proof_details = red_teamer.attempt_exploit(finding, code_content, f_path)
+            
+            finding = replace(finding, proven=is_proven, proof_details=proof_details)
+            updated_red_teamer_findings.append(finding)
+            
+            if is_proven:
+                console.print(f"  [bold green]✓ PROVEN:[/bold green] {finding.vulnerability_type.value}")
+            else:
+                console.print(f"  [bold yellow]✗ UNPROVEN:[/bold yellow] {finding.vulnerability_type.value}")
+        report.findings = updated_red_teamer_findings
+
+    # Secret Auto-Rotation Phase
+    if rotate_secrets:
+        from phoenixsec.core.secret_rotator import MockCloudSecretRotator
+        rotator = MockCloudSecretRotator(workspace_root=Path.cwd())
+        
+        has_secrets = any(f.vulnerability_type.value == "Hardcoded Secret" for f in report.findings)
+        if has_secrets:
+            console.print("[bold magenta]🔐 Initiating Ephemeral Secret Auto-Rotation...[/bold magenta]")
+            
+            from dataclasses import replace
+            updated_rotator_findings = []
+            for finding in report.findings:
+                if finding.vulnerability_type.value == "Hardcoded Secret":
+                    f_path = Path(finding.file_path)
+                    if not f_path.is_file():
+                        updated_rotator_findings.append(finding)
+                        continue
+                    
+                    code_content = f_path.read_text(encoding="utf-8")
+                    is_rotated, details = rotator.revoke_and_rotate(finding, code_content)
+                    finding = replace(finding, rotated=is_rotated)
+                    
+                    if is_rotated:
+                        console.print(details)
+                    else:
+                        console.print(f"  [bold yellow]✗ FAILED TO ROTATE:[/bold yellow] {details}")
+
     # Resolve fail-on threshold
     # If --fail-on is set, only exit 1 when findings above that threshold exist.
     # Otherwise, any finding causes exit 1 (default strict mode).
@@ -489,6 +559,9 @@ def scan(
 
         findings_by_file = defaultdict(list)
         for f in report.findings:
+            if (prove or cfg.red_teamer.enabled) and not getattr(f, "proven", False):
+                # Skip patching unproven vulnerabilities if prove mode is active
+                continue
             findings_by_file[f.file_path].append(f)
 
         from phoenixsec.core.ai_patcher import AIPatcher
@@ -2004,6 +2077,23 @@ def watch(
         console.print("\n[yellow]Watcher stopped.[/yellow]")
         raise typer.Exit(code=0)
 
+
+# ── lsp command ────────────────────────────────────────────────────────────────
+
+@app.command()
+def lsp(ctx: typer.Context) -> None:
+    """Start the PhoenixSec Language Server Protocol (LSP) server.
+    
+    This command starts an LSP server that communicates over standard I/O.
+    It allows any LSP-compatible editor (VS Code, Cursor, Neovim, Zed) to
+    receive real-time security diagnostics as you type.
+    """
+    try:
+        from phoenixsec.lsp.server import start
+        start()
+    except ImportError as e:
+        err_console.print(f"[bold red]LSP dependencies not installed. Ensure pygls is installed: {e}[/bold red]")
+        raise typer.Exit(1)
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 

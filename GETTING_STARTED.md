@@ -106,9 +106,18 @@ phoenixsec install-hook . --severity HIGH
 
 If a security flaw is detected, your commit is aborted, keeping your git history clean. You can fix the issue or run `phoenixsec scan --patch` to remediate it.
 
+### Option C: Real-Time IDE Integration (Vibe-Guard via LSP)
+PhoenixSec ships with a lightning-fast Language Server Protocol (LSP) Server out of the box. This provides real-time, as-you-type security squiggly lines in **any modern IDE** (VS Code, Cursor, Neovim, Zed, JetBrains, Emacs).
+
+```bash
+# Starts the background Language Server (communicate via stdio)
+phoenixsec lsp
+```
+*Configure your IDE's LSP client to point to this executable. PhoenixSec will now intercept hallucinations and vulnerable code milliseconds after you type them, without ever needing to save a file!*
+
 ---
 
-### Option C: CI/CD Pipeline Integration (Fully Automated)
+### Option D: CI/CD Pipeline Integration (Fully Automated)
 Trigger automatic scans on every push, block failing pipelines, and automatically open auto-fix PRs.
 
 #### 1. GitHub Actions
@@ -217,3 +226,21 @@ To see PhoenixSec in action without modifying your production code:
    ```
 3. Inspect the colorized diff preview in your terminal showing the secure parameterization fix.
 4. Confirm with `y` to apply the fix locally!
+
+---
+
+## 🛡️ Beyond Scanning: The Phoenix Revolution Features
+
+### 1. Agentic Proof-of-Exploit (Red Teamer)
+Tired of false positives? Tell PhoenixSec to *prove* a vulnerability exists by dynamically generating and executing an exploit payload in a sandbox:
+```bash
+phoenixsec scan samples/vulnerable_python_app.py --prove
+```
+*Requires `GEMINI_API_KEY`. PhoenixSec will only report the vulnerability if its autonomous agent can successfully hack it!*
+
+### 2. Ephemeral Secret Auto-Rotation
+Leaked an AWS Key or a GitHub Token? Don't just alert—fix it:
+```bash
+phoenixsec scan samples/vulnerable_python_app.py --rotate-secrets
+```
+*PhoenixSec will simulate connecting to the cloud provider, revoking the compromised key, generating a new one, and injecting it directly into your local `.env` file.*

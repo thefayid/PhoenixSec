@@ -28,8 +28,8 @@ app = Flask(__name__)
 # ──────────────────────────────────────────────────────────────────────────────
 DATABASE_PASSWORD = "super_secret_password_123"  # noqa: S105
 SECRET_KEY = "my_flask_secret_key_hardcoded"  # noqa: S105
-AWS_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY")
-STRIPE_API_KEY = "sk-live-abcdef1234567890abcdef1234567890"
+AWS_ACCESS_KEY = "AKIA1234567890123456"
+STRIPE_API_KEY = "sk_test_abcdef1234567890abcdef1234567890"
 
 
 # ──────────────────────────────────────────────────────────────────────────────

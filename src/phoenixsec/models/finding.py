@@ -199,6 +199,12 @@ class Finding:
         Auto-generated UUID.  Unique across the entire pipeline run.
     detected_at:
         UTC timestamp of detection.
+    proven:
+        Whether the vulnerability was successfully exploited/proven by the Agentic Red Teamer.
+    proof_details:
+        The exploit payload, test code, or reasoning used to prove the vulnerability.
+    rotated:
+        Whether a detected secret was successfully auto-rotated in the cloud.
     """
 
     # ── Required fields ────────────────────────────────────────────────────────
@@ -220,6 +226,13 @@ class Finding:
     code_snippet: str | None = None
     cwe_id: str | None = None
     references: tuple[str, ...] = field(default_factory=tuple)
+
+    # ── Proof of Exploit ───────────────────────────────────────────────────────
+    proven: bool = False
+    proof_details: str | None = None
+
+    # ── Secret Auto-Rotation ───────────────────────────────────────────────────
+    rotated: bool = False
 
     # ── Auto-generated ─────────────────────────────────────────────────────────
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
