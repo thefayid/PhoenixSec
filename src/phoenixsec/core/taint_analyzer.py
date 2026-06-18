@@ -38,7 +38,24 @@ class TaintAnalyzer:
         root = Path(directory).resolve()
         if not root.is_dir():
             return
+
+        from phoenixsec.core.config import load_config
+        try:
+            config = load_config()
+            exclude_dirs = set(config.scanning.exclude_dirs)
+        except Exception:
+            exclude_dirs = set()
+
         for p in root.rglob("*.py"):
+            # Skip files located within any excluded directories relative to root
+            try:
+                rel_parts = p.relative_to(root).parts[:-1]
+                if any(part in exclude_dirs for part in rel_parts):
+                    continue
+            except ValueError:
+                if any(part in exclude_dirs for part in p.parts):
+                    continue
+
             try:
                 self.analyze_file_definitions(p)
             except Exception as e:

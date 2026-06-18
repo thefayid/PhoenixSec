@@ -666,6 +666,27 @@ class TestRuleEngine:
         results = engine.scan_directory(tmp_path, recursive=False)
         assert len(results) == 1  # Only root.py
 
+    def test_scan_directory_excludes(
+        self, registry: RuleRegistry, engine: RuleEngine, tmp_path: Path
+    ) -> None:
+        registry.register(EvalRule)
+        (tmp_path / "a.py").write_text('eval("x")\n', encoding="utf-8")
+        
+        # Create an excluded directory
+        excluded = tmp_path / "node_modules"
+        excluded.mkdir()
+        (excluded / "b.py").write_text('eval("x")\n', encoding="utf-8")
+        
+        # Another excluded directory
+        excluded2 = tmp_path / "dist"
+        excluded2.mkdir()
+        (excluded2 / "c.py").write_text('eval("x")\n', encoding="utf-8")
+
+        results = engine.scan_directory(tmp_path)
+        # Only a.py should be scanned, node_modules/b.py and dist/c.py should be ignored
+        assert len(results) == 1
+        assert Path(results[0].file_path).name == "a.py"
+
     def test_engine_result_to_dict(self, registry: RuleRegistry, engine: RuleEngine) -> None:
         registry.register(EvalRule)
         result = engine.scan_code(VULN_PYTHON, file_path="app.py", language="python")

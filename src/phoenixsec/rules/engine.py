@@ -377,9 +377,20 @@ class RuleEngine:
         taint_analyzer.analyze_directory(root)
 
         results: list[EngineResult] = []
+        exclude_dirs = set(self.config.scanning.exclude_dirs)
         for file_path in sorted(glob):
             if not file_path.is_file():
                 continue
+
+            # Skip files located within any excluded directories relative to root
+            try:
+                rel_parts = file_path.relative_to(root).parts[:-1]
+                if any(part in exclude_dirs for part in rel_parts):
+                    continue
+            except ValueError:
+                if any(part in exclude_dirs for part in file_path.parts):
+                    continue
+
             if not self._parser.is_supported(file_path):
                 continue
 
