@@ -1,0 +1,36 @@
+{
+  "name": "phoenixsec-vscode",
+  "displayName": "PhoenixSec Security Scanner",
+  "description": "Autonomous security scanner and AI auto-patcher for Python, Java, JavaScript, and TypeScript.",
+  "version": "0.1.0",
+  "publisher": "thefayid",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Linters",
+    "Security"
+  ],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "phoenixsec.scan",
+        "title": "PhoenixSec: Scan Active File"
+      },
+      {
+        "command": "phoenixsec.applyFix",
+        "title": "PhoenixSec: Auto-patch File"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "phoenixsec.scan",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s",
+        "when": "editorTextFocus"
+      }
+    ]
+  }
+}

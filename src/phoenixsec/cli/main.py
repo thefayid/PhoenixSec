@@ -1694,6 +1694,317 @@ def scan_org(
         raise typer.Exit(code=0)
 
 
+@app.command()
+def init(
+    ctx: typer.Context,
+    non_interactive: Annotated[
+        bool,
+        typer.Option(
+            "--non-interactive",
+            help="Bypass interactive prompts and use defaults.",
+        ),
+    ] = False,
+) -> None:
+    """Run interactive configuration setup wizard for PhoenixSec."""
+    console.print(
+        Panel(
+            "[bold magenta]🛡️ PhoenixSec Setup Wizard[/bold magenta]\nConfigure your scan engine, AI auto-patcher, and CI/CD pipeline automation.",
+            border_style="magenta",
+        )
+    )
+
+    config_data = {
+        "scanning": {
+            "min_severity": "LOW",
+            "max_file_size_kb": 512,
+            "exclude_dirs": [".venv", "node_modules", "__pycache__", "tests", "samples"],
+        },
+        "reporting": {"output_dir": "reports/"},
+        "logging": {"level": "INFO", "json_mode": False},
+        "patching": {
+            "enabled": True,
+            "dry_run": False,
+            "backup": True,
+            "provider": "gemini",
+            "ollama_url": "http://localhost:11434",
+            "model": "gemini-1.5-flash",
+        },
+    }
+
+    if non_interactive:
+        console.print(
+            "[yellow]Bypassing interactive questions — exporting default config.yaml...[/yellow]"
+        )
+    else:
+        # Prompt for Min Severity
+        min_sev = typer.prompt(
+            "What minimum vulnerability severity would you like to report? (INFO|LOW|MEDIUM|HIGH|CRITICAL)",
+            default="LOW",
+        ).upper()
+        if min_sev in {"INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"}:
+            config_data["scanning"]["min_severity"] = min_sev
+
+        # Prompt for AI Patcher
+        enable_patch = typer.confirm(
+            "Would you like to enable the AI/Rule-based Auto-Patcher?", default=True
+        )
+        config_data["patching"]["enabled"] = enable_patch
+        if enable_patch:
+            provider = typer.prompt(
+                "Which AI provider would you like to use for patching? (gemini|ollama)",
+                default="gemini",
+            ).lower()
+            if provider in {"gemini", "ollama"}:
+                config_data["patching"]["provider"] = provider
+
+            if provider == "ollama":
+                url = typer.prompt(
+                    "What is your local Ollama server URL?", default="http://localhost:11434"
+                )
+                model = typer.prompt("What local model should Ollama run?", default="qwen2.5-coder")
+                config_data["patching"]["ollama_url"] = url
+                config_data["patching"]["model"] = model
+            else:
+                model = typer.prompt("What Gemini model should we request?", default="gemini-1.5-flash")
+                config_data["patching"]["model"] = model
+                console.print(
+                    "[cyan]👉 Set PHOENIXSEC_AI_KEY or GEMINI_API_KEY environment variable to supply your API key.[/cyan]"
+                )
+
+        # Prompt for pre-commit hook
+        install_pc = typer.confirm(
+            "Would you like to install the git pre-commit hook now?", default=False
+        )
+        if install_pc:
+            try:
+                ctx.invoke(install_hook, target_dir=Path("."), severity="HIGH", force=True)
+            except Exception as e:
+                console.print(f"[yellow]Failed to install pre-commit hook automatically: {e}[/yellow]")
+
+        # Prompt for CI/CD Pipelines
+        generate_ci = typer.confirm(
+            "Would you like to generate CI/CD pipeline template files?", default=True
+        )
+        if generate_ci:
+            vcs_host = typer.prompt(
+                "Which VCS host do you use? (github|gitlab|bitbucket)", default="github"
+            ).lower()
+            if vcs_host == "github":
+                workflow_dir = Path(".github/workflows")
+                workflow_dir.mkdir(parents=True, exist_ok=True)
+                github_yml = """name: 🛡️ PhoenixSec Security Scan
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PhoenixSec
+        run: pip install git+https://github.com/thefayid/PhoenixSec.git
+      - name: Run Scan & Auto-Fix
+        env:
+          PHOENIXSEC_AI_KEY: ${{ secrets.PHOENIXSEC_AI_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          phoenixsec scan . --fail-on HIGH --patch --yes
+"""
+                (workflow_dir / "phoenixsec.yml").write_text(github_yml, encoding="utf-8")
+                console.print("[green]✓ Generated .github/workflows/phoenixsec.yml[/green]")
+
+            elif vcs_host == "gitlab":
+                gitlab_yml = """stages:
+  - security
+
+phoenixsec-scan:
+  stage: security
+  image: python:3.12
+  variables:
+    PHOENIXSEC_VCS_PROVIDER: "gitlab"
+  before_script:
+    - pip install git+https://github.com/thefayid/PhoenixSec.git
+  script:
+    - phoenixsec scan . --fail-on HIGH --patch --yes
+  only:
+    - merge_requests
+    - main
+    - master
+"""
+                Path(".gitlab-ci.yml").write_text(gitlab_yml, encoding="utf-8")
+                console.print("[green]✓ Generated .gitlab-ci.yml[/green]")
+
+            elif vcs_host == "bitbucket":
+                bb_yml = """pipelines:
+  default:
+    - step:
+        name: PhoenixSec Security Scan
+        image: python:3.12
+        script:
+          - pip install git+https://github.com/thefayid/PhoenixSec.git
+          - export PHOENIXSEC_VCS_PROVIDER="bitbucket"
+          - phoenixsec scan . --fail-on HIGH --patch --yes
+"""
+                Path("bitbucket-pipelines.yml").write_text(bb_yml, encoding="utf-8")
+                console.print("[green]✓ Generated bitbucket-pipelines.yml[/green]")
+
+    # Write config.yaml
+    import yaml
+
+    with open("config.yaml", "w", encoding="utf-8") as f:
+        yaml.safe_dump(config_data, f, default_flow_style=False)
+    console.print("[green]✓ Successfully configured and saved config.yaml[/green]")
+
+
+@app.command()
+def watch(
+    ctx: typer.Context,
+    target: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory to watch for file changes.",
+            exists=True,
+        ),
+    ] = Path("."),
+    severity: Annotated[
+        str,
+        typer.Option(
+            "--severity",
+            "-s",
+            help="Minimum severity to alert: INFO | LOW | MEDIUM | HIGH | CRITICAL",
+        ),
+    ] = "LOW",
+) -> None:
+    """Watch a directory for file changes and scan modified files in real-time."""
+    import time
+
+    from phoenixsec.rules.engine import RuleEngine
+
+    cfg = ctx.obj["config"]
+    resolved = target.resolve()
+
+    try:
+        min_severity = Severity.from_string(severity.upper())
+    except ValueError as exc:
+        err_console.print(f"[red]Invalid severity:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    import phoenixsec.rules.sqli  # noqa: F401
+
+    engine = RuleEngine()
+
+    exclude_dirs = set(cfg.scanning.exclude_dirs)
+
+    def should_watch(path: Path) -> bool:
+        try:
+            rel = path.relative_to(resolved)
+            parts = rel.parts
+            for p in parts[:-1]:
+                if p in exclude_dirs:
+                    return False
+        except ValueError:
+            return False
+        return path.is_file() and engine._parser.is_supported(path)
+
+    def get_watch_files() -> dict[Path, float]:
+        files = {}
+        for p in resolved.rglob("*"):
+            if should_watch(p):
+                try:
+                    files[p] = p.stat().st_mtime
+                except Exception:
+                    pass
+        return files
+
+    console.print(
+        Panel(
+            Text.assemble(
+                ("👁️ PhoenixSec Watcher Running\n\n", "bold green"),
+                ("Target       : ", "dim"),
+                (f"{resolved}\n", "bold white"),
+                ("Severity     : ", "dim"),
+                (f"{min_severity.name}+\n", "bold yellow"),
+                ("Exclude dirs : ", "dim"),
+                (f"{', '.join(sorted(exclude_dirs))}\n", "bold white"),
+                ("\nPress Ctrl+C to exit.", "dim"),
+            ),
+            title="[bold green]Watcher Active[/bold green]",
+            border_style="green",
+        )
+    )
+
+    watched_files = get_watch_files()
+
+    try:
+        while True:
+            time.sleep(1.5)
+            current_files = get_watch_files()
+
+            # Check for changes or additions
+            for path, mtime in current_files.items():
+                is_changed = False
+                if path not in watched_files:
+                    console.print(f"\n[bold cyan]➕ File added: {path.relative_to(resolved)}[/bold cyan]")
+                    is_changed = True
+                elif watched_files[path] < mtime:
+                    console.print(f"\n[bold cyan]🔄 File modified: {path.relative_to(resolved)}[/bold cyan]")
+                    is_changed = True
+
+                if is_changed:
+                    watched_files[path] = mtime
+                    try:
+                        res = engine.scan_file(path)
+                        filtered_findings = [f for f in res.findings if f.severity >= min_severity]
+                        if filtered_findings:
+                            console.print(
+                                f"[bold red]❌ {len(filtered_findings)} vulnerabilities found in {path.name}![/bold red]"
+                            )
+                            for idx, finding in enumerate(filtered_findings, 1):
+                                sev_colors = {
+                                    "CRITICAL": "bold red",
+                                    "HIGH": "bold red",
+                                    "MEDIUM": "bold yellow",
+                                    "LOW": "bold blue",
+                                    "INFO": "dim",
+                                }
+                                color = sev_colors.get(finding.severity.name, "white")
+                                detail = Text.assemble(
+                                    (f"#{idx} ", "bold white"),
+                                    (f"[{finding.severity.name}] ", f"bold {color}"),
+                                    (f"{finding.vulnerability_type} at line {finding.line_number}\n\n", "bold"),
+                                    ("Recommendation: ", "bold green"),
+                                    (f"{finding.recommendation}", "white"),
+                                )
+                                console.print(Panel(detail, border_style=color))
+                        else:
+                            console.print(
+                                f"[bold green]✅ Clean: {path.name} passed all security checks.[/bold green]"
+                            )
+                    except Exception as exc:
+                        console.print(f"[yellow]Error scanning {path.name}: {exc}[/yellow]")
+
+            # Check for deletions
+            for path in list(watched_files.keys()):
+                if path not in current_files:
+                    console.print(f"\n[dim]➖ File deleted: {path.relative_to(resolved)}[/dim]")
+                    del watched_files[path]
+
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Watcher stopped.[/yellow]")
+        raise typer.Exit(code=0)
+
+
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
