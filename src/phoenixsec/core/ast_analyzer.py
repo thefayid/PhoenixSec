@@ -726,7 +726,7 @@ REFERENCES: dict[str, tuple[str, ...]] = {
     ),
     "AST-PY-DESER-002": (
         "https://owasp.org/www-community/vulnerabilities/Deserialization_of_untrusted_data",
-        "https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation",
+        "https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.safe_load(input)-Deprecation",
     ),
     "AST-PY-PATH-001": (
         "https://owasp.org/www-community/attacks/Path_Traversal",
