@@ -81,3 +81,10 @@ Desktop.ini
 
 # ── Nested Contribution Generator ──────────────────────────
 /github-contributions/
+
+# Local test artifacts
+patched_temp.py
+runs.json
+test_file.py
+tmp_test/
+

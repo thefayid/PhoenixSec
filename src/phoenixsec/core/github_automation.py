@@ -53,11 +53,22 @@ class GitHubPRAutomation:
         file_name = file_path_resolved.name
 
         if not auto_confirm:
+            import sys
+            import typer
             from rich.console import Console
             console = Console()
+            
+            if not sys.stdin.isatty():
+                console.print("[yellow]Non-interactive environment detected and --yes not passed — skipping GitHub PR automation. Patch was still applied locally. Pass --yes to enable PR automation in CI/non-interactive contexts.[/yellow]")
+                return None
+
             console.print("[bold yellow]⚠️ This will create a new git branch and commit in this repository.[/bold yellow]")
-            if not typer.confirm("Do you want to proceed with GitHub PR automation?"):
-                console.print("[yellow]PR automation cancelled by user.[/yellow]")
+            try:
+                if not typer.confirm("Do you want to proceed with GitHub PR automation?"):
+                    console.print("[yellow]PR automation cancelled by user.[/yellow]")
+                    return None
+            except typer.Abort:
+                console.print("\n[yellow]PR automation cancelled by user.[/yellow]")
                 return None
 
         # Create branch name
@@ -174,7 +185,10 @@ class GitHubPRAutomation:
             except subprocess.CalledProcessError as e:
                 err_msg = e.stderr.decode().strip()
                 log.warning(f"Git push failed (possibly no remote origin): {err_msg}")
-                raise PhoenixSecError(f"Could not push branch to remote origin: {err_msg}") from e
+                from rich.console import Console
+                console = Console()
+                console.print(f"[yellow]Fix committed locally on branch {branch_name}, but could not push to remote 'origin' (no remote configured or no push access). Set up a remote to enable automatic PR creation.[/yellow]")
+                return None
 
             # If an open PR already exists, return its URL and skip duplicate PR creation
             if existing_pr_url:
