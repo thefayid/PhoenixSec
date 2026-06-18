@@ -7,11 +7,11 @@ def get_user_profile(request):
     user_id = request.GET.get("id")
 
     # Vulnerable: direct f-string interpolation of user input into a SQL query
-    query = f"SELECT * FROM users WHERE id = '{user_id}'"
+    query = "SELECT * FROM users WHERE id = ?"
 
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
 
     # Vulnerable execute sink
-    cursor.execute(query)
+    cursor.execute(query, (user_id,))
     return cursor.fetchone()
