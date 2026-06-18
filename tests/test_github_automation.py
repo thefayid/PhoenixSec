@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -45,6 +46,7 @@ def test_create_pull_request_success(
         repo="testrepo",
         token="testtoken",
         base_branch="main",
+        auto_confirm=True,
     )
 
     # Verifications
@@ -86,6 +88,9 @@ def test_create_pull_request_deduplication(
     # Mock git executions
     mock_run.return_value = MagicMock(returncode=0, stdout=b"", stderr=b"")
 
+    content_hash = hashlib.sha256("patched code".encode("utf-8")).hexdigest()[:7]
+    expected_branch_name = f"phoenixsec-fix-sql-injection-login-java-{content_hash}"
+
     # Mock HTTP response: GET returns a list of open PRs (one matches the branch)
     mock_get_response = MagicMock()
     mock_get_response.read.return_value = json.dumps(
@@ -93,7 +98,7 @@ def test_create_pull_request_deduplication(
             {
                 "html_url": "https://github.com/testowner/testrepo/pull/123",
                 "number": 123,
-                "head": {"ref": "phoenixsec-fix-sql-injection-login-java"},
+                "head": {"ref": expected_branch_name},
             }
         ]
     ).encode("utf-8")
@@ -110,6 +115,7 @@ def test_create_pull_request_deduplication(
         repo="testrepo",
         token="testtoken",
         base_branch="main",
+        auto_confirm=True,
     )
 
     # Verifications
@@ -121,3 +127,31 @@ def test_create_pull_request_deduplication(
     req = mock_urlopen.call_args[0][0]
     assert req.method == "GET"
     assert "pulls?state=open" in req.full_url
+
+
+@patch("subprocess.run")
+@patch("urllib.request.urlopen")
+def test_create_pull_request_no_credentials(
+    mock_urlopen: MagicMock, mock_run: MagicMock, tmp_path: Path
+) -> None:
+    test_file = tmp_path / "Login.java"
+    test_file.write_text("vulnerable code", encoding="utf-8")
+
+    # Set environment variables to None/empty implicitly by not providing them and clearing env
+    with patch.dict("os.environ", {}, clear=True):
+        automation = GitHubPRAutomation()
+        pr_url = automation.create_pull_request(
+            file_path=str(test_file),
+            patched_code="patched code",
+            vulnerability_type="SQL Injection",
+            recommendation="Use parameterization.",
+            owner=None,
+            repo=None,
+            token=None,
+            auto_confirm=True,
+        )
+
+    assert pr_url is None
+    # Ensure it didn't call any subprocess or urlopen
+    mock_run.assert_not_called()
+    mock_urlopen.assert_not_called()

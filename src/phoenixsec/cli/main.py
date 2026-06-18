@@ -189,6 +189,14 @@ def scan(
             help="Automatically patch detected vulnerabilities and open a GitHub PR.",
         ),
     ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Skip interactive confirmation prompts for PR creation.",
+        ),
+    ] = False,
     fail_on: Annotated[
         str,
         typer.Option(
@@ -513,6 +521,7 @@ def scan(
                         vulnerability_type=vuln_types,
                         recommendation=recs,
                         ai_generated=is_ai_patch,
+                        auto_confirm=yes,
                     )
                     if pr_url:
                         console.print(f"[bold green]Pull Request opened:[/bold green] {pr_url}")

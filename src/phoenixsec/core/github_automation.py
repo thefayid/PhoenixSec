@@ -5,13 +5,17 @@ import os
 import re
 import subprocess
 import urllib.request
+import hashlib
 from pathlib import Path
+import typer
 
+from phoenixsec.core.exceptions import PhoenixSecError
 from phoenixsec.core.logger import get_logger
 from phoenixsec.models.finding import Finding
 from phoenixsec.models.vulnerability import Severity
 
 log = get_logger(__name__)
+
 
 
 class GitHubPRAutomation:
@@ -28,46 +32,40 @@ class GitHubPRAutomation:
         token: str | None = None,
         base_branch: str = "main",
         ai_generated: bool = False,
+        auto_confirm: bool = False,
     ) -> str | None:
-        """Remediate a vulnerability, commit the fix to a new branch, and open a PR.
-
-        Parameters
-        ----------
-        file_path : str | Path
-            Path to the target file being patched.
-        patched_code : str
-            The corrected source code.
-        vulnerability_type : str
-            The name/category of the vulnerability (e.g. "SQL Injection").
-        recommendation : str
-            Description of the fix and remediation advice for the PR body.
-        owner : str, optional
-            GitHub repository owner (defaults to GITHUB_OWNER env var).
-        repo : str, optional
-            GitHub repository name (defaults to GITHUB_REPO env var).
-        token : str, optional
-            GitHub PAT token (defaults to GITHUB_TOKEN env var).
-        base_branch : str
-            The base branch to merge the PR into (default "main").
-
-        Returns
-        -------
-        str | None
-            The URL of the created Pull Request, or None if PR creation failed.
-        """
+        """Remediate a vulnerability, commit the fix to a new branch, and open a PR."""
         # Resolve config from params or env vars
         token = token or os.environ.get("PHOENIXSEC_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
         owner = owner or os.environ.get("PHOENIXSEC_GITHUB_OWNER") or os.environ.get("GITHUB_OWNER")
         repo = repo or os.environ.get("PHOENIXSEC_GITHUB_REPO") or os.environ.get("GITHUB_REPO")
 
+        if not token or not owner or not repo:
+            from rich.console import Console
+            console = Console()
+            console.print(
+                "[yellow]Patch applied locally. Set PHOENIXSEC_GITHUB_TOKEN, PHOENIXSEC_GITHUB_OWNER, "
+                "and PHOENIXSEC_GITHUB_REPO to enable automatic PR creation.[/yellow]"
+            )
+            return None
+
         file_path_resolved = Path(file_path).resolve()
         file_name = file_path_resolved.name
+
+        if not auto_confirm:
+            from rich.console import Console
+            console = Console()
+            console.print("[bold yellow]⚠️ This will create a new git branch and commit in this repository.[/bold yellow]")
+            if not typer.confirm("Do you want to proceed with GitHub PR automation?"):
+                console.print("[yellow]PR automation cancelled by user.[/yellow]")
+                return None
 
         # Create branch name
         vuln_slug = re.sub(r"[^a-zA-Z0-9]", "-", vulnerability_type.lower())[:50].strip('-')
         file_slug = re.sub(r"[^a-zA-Z0-9]", "-", file_name.lower())[:30].strip('-')
+        content_hash = hashlib.sha256(patched_code.encode("utf-8")).hexdigest()[:7]
         branch_prefix = "phoenixsec-ai-fix" if ai_generated else "phoenixsec-fix"
-        branch_name = f"{branch_prefix}-{vuln_slug}-{file_slug}"
+        branch_name = f"{branch_prefix}-{vuln_slug}-{file_slug}-{content_hash}"
 
         log.info(f"PR Automation: starting fix on branch {branch_name}")
 
@@ -83,37 +81,39 @@ class GitHubPRAutomation:
 
             # Query the GitHub API to check if an open PR with the head branch already exists
             existing_pr_url = None
-            if token and owner and repo:
-                try:
-                    pulls_url = f"https://api.github.com/repos/{owner}/{repo}/pulls?state=open"
-                    headers = {
-                        "Authorization": f"token {token}",
-                        "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": "PhoenixSec-Bot",
-                    }
-                    get_req = urllib.request.Request(pulls_url, headers=headers, method="GET")
-                    with urllib.request.urlopen(get_req) as response:
-                        pulls_data = json.loads(response.read().decode("utf-8"))
-                        if isinstance(pulls_data, list):
-                            for pr in pulls_data:
-                                ref = pr.get("head", {}).get("ref")
-                                if ref == branch_name:
-                                    existing_pr_url = pr.get("html_url")
-                                    log.info(
-                                        f"PR Automation: Found existing open PR {existing_pr_url} for branch {branch_name}"
-                                    )
-                                    break
-                except Exception as exc:
-                    log.warning(f"Failed to query existing PRs: {exc}")
+            try:
+                pulls_url = f"https://api.github.com/repos/{owner}/{repo}/pulls?state=open"
+                headers = {
+                    "Authorization": f"token {token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "PhoenixSec-Bot",
+                }
+                get_req = urllib.request.Request(pulls_url, headers=headers, method="GET")
+                with urllib.request.urlopen(get_req) as response:
+                    pulls_data = json.loads(response.read().decode("utf-8"))
+                    if isinstance(pulls_data, list):
+                        for pr in pulls_data:
+                            ref = pr.get("head", {}).get("ref")
+                            if ref == branch_name:
+                                existing_pr_url = pr.get("html_url")
+                                log.info(
+                                    f"PR Automation: Found existing open PR {existing_pr_url} for branch {branch_name}"
+                                )
+                                break
+            except Exception as exc:
+                log.warning(f"Failed to query existing PRs: {exc}")
 
             # 1. Initialize git repo if not present
             git_dir = git_root / ".git"
             if not git_dir.is_dir():
                 log.debug("PR Automation: Git repo not found, running 'git init'.")
-                subprocess.run(["git", "init"], cwd=cwd, check=True, capture_output=True)
-                # Make initial commit if newly initialized
-                subprocess.run(["git", "add", "."], cwd=cwd, check=True, capture_output=True)
-                subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=cwd, check=True, capture_output=True)
+                try:
+                    subprocess.run(["git", "init"], cwd=cwd, check=True, capture_output=True)
+                    # Make initial commit if newly initialized
+                    subprocess.run(["git", "add", "."], cwd=cwd, check=True, capture_output=True)
+                    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=cwd, check=True, capture_output=True)
+                except subprocess.CalledProcessError as e:
+                    raise PhoenixSecError(f"Could not initialize git repository: {e.stderr.decode().strip()}") from e
 
             # Configure basic git user name and email locally if not set
             subprocess.run(
@@ -130,16 +130,17 @@ class GitHubPRAutomation:
             )
 
             # 2. Checkout to new branch or existing branch
-            # 2. Checkout to new branch or existing branch, creating/resetting as needed
             try:
                 subprocess.run(
                     ["git", "checkout", "-B", branch_name], cwd=cwd, check=True, capture_output=True
                 )
             except subprocess.CalledProcessError as e:
-                log.error(f"Git checkout failed. stderr: {e.stderr.decode('utf-8')}")
-                raise
+                raise PhoenixSecError(
+                    f"Could not switch to branch {branch_name} — you may have uncommitted local changes. "
+                    "Commit or stash them first."
+                ) from e
 
-            # 3. Write patched code to the file
+            # 3. Write patched code to the file (it's already patched locally, but we ensure it's written in this branch)
             file_path_resolved.write_text(patched_code, encoding="utf-8")
 
             try:
@@ -148,22 +149,32 @@ class GitHubPRAutomation:
                 rel_path = file_name
 
             # 4. Stage and commit changes
-            subprocess.run(["git", "add", rel_path], cwd=cwd, check=True, capture_output=True)
+            try:
+                subprocess.run(["git", "add", rel_path], cwd=cwd, check=True, capture_output=True)
+            except subprocess.CalledProcessError as e:
+                raise PhoenixSecError("Could not stage patched file for commit.") from e
 
             title_prefix = "PhoenixSec AI Fix" if ai_generated else "PhoenixSec Fix"
             commit_msg = f"{title_prefix}: Resolved {vulnerability_type} in {rel_path}"
-            subprocess.run(
-                ["git", "commit", "-m", commit_msg], cwd=cwd, check=True, capture_output=True
-            )
+            try:
+                subprocess.run(
+                    ["git", "commit", "-m", commit_msg], cwd=cwd, check=True, capture_output=True
+                )
+            except subprocess.CalledProcessError as e:
+                # If there's nothing to commit, it will fail here. But we just patched the file, so it should be fine.
+                err_msg = e.stderr.decode().strip() or e.stdout.decode().strip()
+                if "nothing to commit" not in err_msg.lower():
+                    raise PhoenixSecError(f"Could not commit patched file: {err_msg}") from e
 
             # 5. Push branch to remote (optional/ignored if no remote setup)
             try:
                 subprocess.run(
                     ["git", "push", "origin", branch_name], cwd=cwd, check=True, capture_output=True
                 )
-            except subprocess.CalledProcessError as push_exc:
-                err_msg = push_exc.stderr.decode().strip()
+            except subprocess.CalledProcessError as e:
+                err_msg = e.stderr.decode().strip()
                 log.warning(f"Git push failed (possibly no remote origin): {err_msg}")
+                raise PhoenixSecError(f"Could not push branch to remote origin: {err_msg}") from e
 
             # If an open PR already exists, return its URL and skip duplicate PR creation
             if existing_pr_url:
@@ -171,11 +182,6 @@ class GitHubPRAutomation:
                 return existing_pr_url
 
             # 6. Open Pull Request via GitHub REST API
-            if not token or not owner or not repo:
-                log.warning("GitHub owner, repo, or token not set. Skipping Pull Request creation.")
-                return None
-
-            title_prefix = "PhoenixSec AI Fix" if ai_generated else "PhoenixSec Fix"
             pr_title = f"{title_prefix}: Resolved {vulnerability_type} in {file_name}"
 
             body_header = "### 🛡️ PhoenixSec Automatic Security Patch\n\n"
@@ -215,9 +221,11 @@ class GitHubPRAutomation:
                 log.info(f"Successfully created GitHub PR: {pr_html_url}")
                 return pr_html_url
 
+        except PhoenixSecError:
+            raise
         except Exception as exc:
             log.error(f"GitHub PR automation failed: {exc}")
-            raise
+            raise PhoenixSecError(f"GitHub PR automation failed: {exc}") from exc
 
     def post_pr_comments(
         self,
