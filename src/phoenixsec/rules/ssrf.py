@@ -207,6 +207,25 @@ def _score_sink(sink: _SSRFSink) -> float:
     if _LOCALHOST_RE.search(window_text) and not has_source:
         score -= 0.35
 
+    # Variable-specific validation check
+    # Extract the variable passed to the sink
+    idx = sink.line.find(sink.sink_match)
+    if idx != -1:
+        import re as _re
+        m = _re.search(r"\(\s*([a-zA-Z_][a-zA-Z0-9_]*)\b", sink.line[idx:])
+        if m:
+            var_name = m.group(1)
+            # -1.00 — Strong allowlist check for the specific variable
+            sanitizer_re = _re.compile(
+                r"if\s+.*\b" + _re.escape(var_name) + r"\.startswith\s*\("
+                r"|if\s+.*\b" + _re.escape(var_name) + r"\b.*\bin\s+"
+                r"|if\s+.*\burlparse\s*\(\s*" + _re.escape(var_name) + r"\s*\)",
+                _re.IGNORECASE
+            )
+            if sanitizer_re.search(window_text):
+                score -= 1.0
+
+
     return max(0.0, min(score, 1.0))
 
 

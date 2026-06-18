@@ -297,6 +297,16 @@ def _classify_node(
                 source_expr="input()",
                 line=line,
             )
+        
+        # Check for known sanitizers to stop taint propagation
+        func_name = ""
+        if isinstance(node.func, ast.Name):
+            func_name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            func_name = node.func.attr
+        if func_name in {"secure_filename", "escape", "sanitize", "urlparse"}:
+            return TaintInfo(is_tainted=False, reason="sanitized by " + func_name)
+
         # Method calls on tainted objects: request.args.get(...), etc.
         if isinstance(node.func, ast.Attribute):
             obj_taint = _classify_node(node.func.value, symbol_table, source_lines, depth + 1)

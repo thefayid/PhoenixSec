@@ -201,6 +201,10 @@ def _score_sink(sink: _PathSink) -> float:
     if _SAFE_RE.search(window_text):
         score -= 0.55
 
+    # -1.00 — Strong canonicalisation/validation wrapping the argument in the sink line
+    if re.search(r"\b(secure_filename|abspath|realpath|resolve)\s*\(", sink.line, re.IGNORECASE):
+        score -= 1.00
+
     # -0.30 — No variables in window (only literals)
     if not re.search(r"\b[a-z_][a-z0-9_]{2,}\b", window_text, re.IGNORECASE):
         score -= 0.30

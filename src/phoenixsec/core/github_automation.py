@@ -64,15 +64,22 @@ class GitHubPRAutomation:
         file_name = file_path_resolved.name
 
         # Create branch name
-        vuln_slug = re.sub(r"[^a-zA-Z0-9]", "-", vulnerability_type.lower())
-        file_slug = re.sub(r"[^a-zA-Z0-9]", "-", file_name.lower())
+        vuln_slug = re.sub(r"[^a-zA-Z0-9]", "-", vulnerability_type.lower())[:50].strip('-')
+        file_slug = re.sub(r"[^a-zA-Z0-9]", "-", file_name.lower())[:30].strip('-')
         branch_prefix = "phoenixsec-ai-fix" if ai_generated else "phoenixsec-fix"
         branch_name = f"{branch_prefix}-{vuln_slug}-{file_slug}"
 
         log.info(f"PR Automation: starting fix on branch {branch_name}")
 
         try:
-            cwd = str(file_path_resolved.parent)
+            # Find the git root directory by walking up parents
+            git_root = file_path_resolved.parent
+            for parent in [file_path_resolved.parent] + list(file_path_resolved.parent.parents):
+                if (parent / ".git").is_dir():
+                    git_root = parent
+                    break
+            
+            cwd = str(git_root)
 
             # Query the GitHub API to check if an open PR with the head branch already exists
             existing_pr_url = None
@@ -100,10 +107,13 @@ class GitHubPRAutomation:
                     log.warning(f"Failed to query existing PRs: {exc}")
 
             # 1. Initialize git repo if not present
-            git_dir = file_path_resolved.parent / ".git"
+            git_dir = git_root / ".git"
             if not git_dir.is_dir():
                 log.debug("PR Automation: Git repo not found, running 'git init'.")
                 subprocess.run(["git", "init"], cwd=cwd, check=True, capture_output=True)
+                # Make initial commit if newly initialized
+                subprocess.run(["git", "add", "."], cwd=cwd, check=True, capture_output=True)
+                subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=cwd, check=True, capture_output=True)
 
             # Configure basic git user name and email locally if not set
             subprocess.run(
@@ -120,28 +130,28 @@ class GitHubPRAutomation:
             )
 
             # 2. Checkout to new branch or existing branch
-            show_ref_res = subprocess.run(
-                ["git", "show-ref", "--verify", f"refs/heads/{branch_name}"],
-                cwd=cwd,
-                capture_output=True,
-            )
-            if show_ref_res.returncode == 0:
+            # 2. Checkout to new branch or existing branch, creating/resetting as needed
+            try:
                 subprocess.run(
-                    ["git", "checkout", branch_name], cwd=cwd, check=True, capture_output=True
+                    ["git", "checkout", "-B", branch_name], cwd=cwd, check=True, capture_output=True
                 )
-            else:
-                subprocess.run(
-                    ["git", "checkout", "-b", branch_name], cwd=cwd, check=True, capture_output=True
-                )
+            except subprocess.CalledProcessError as e:
+                log.error(f"Git checkout failed. stderr: {e.stderr.decode('utf-8')}")
+                raise
 
             # 3. Write patched code to the file
             file_path_resolved.write_text(patched_code, encoding="utf-8")
 
+            try:
+                rel_path = file_path_resolved.relative_to(git_root).as_posix()
+            except ValueError:
+                rel_path = file_name
+
             # 4. Stage and commit changes
-            subprocess.run(["git", "add", file_name], cwd=cwd, check=True, capture_output=True)
+            subprocess.run(["git", "add", rel_path], cwd=cwd, check=True, capture_output=True)
 
             title_prefix = "PhoenixSec AI Fix" if ai_generated else "PhoenixSec Fix"
-            commit_msg = f"{title_prefix}: Resolved {vulnerability_type} in {file_name}"
+            commit_msg = f"{title_prefix}: Resolved {vulnerability_type} in {rel_path}"
             subprocess.run(
                 ["git", "commit", "-m", commit_msg], cwd=cwd, check=True, capture_output=True
             )
