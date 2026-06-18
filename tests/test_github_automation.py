@@ -155,3 +155,103 @@ def test_create_pull_request_no_credentials(
     # Ensure it didn't call any subprocess or urlopen
     mock_run.assert_not_called()
     mock_urlopen.assert_not_called()
+
+
+@patch("subprocess.run")
+@patch("urllib.request.urlopen")
+def test_gitlab_create_mr_success(
+    mock_urlopen: MagicMock, mock_run: MagicMock, tmp_path: Path
+) -> None:
+    test_file = tmp_path / "App.java"
+    test_file.write_text("vulnerable code", encoding="utf-8")
+
+    mock_run.return_value = MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    # Mock responses for GitLab GET and POST
+    mock_get_response = MagicMock()
+    mock_get_response.read.return_value = b"[]"
+    mock_post_response = MagicMock()
+    mock_post_response.read.return_value = json.dumps(
+        {"web_url": "https://gitlab.com/testowner/testrepo/-/merge_requests/12"}
+    ).encode("utf-8")
+
+    mock_get_ctx = MagicMock()
+    mock_get_ctx.__enter__.return_value = mock_get_response
+    mock_post_ctx = MagicMock()
+    mock_post_ctx.__enter__.return_value = mock_post_response
+
+    mock_urlopen.side_effect = [mock_get_ctx, mock_post_ctx]
+
+    with patch.dict("os.environ", {"PHOENIXSEC_VCS_PROVIDER": "gitlab"}):
+        automation = GitHubPRAutomation()
+        mr_url = automation.create_pull_request(
+            file_path=str(test_file),
+            patched_code="patched code",
+            vulnerability_type="SQL Injection",
+            recommendation="Use parameterization.",
+            owner="testowner",
+            repo="testrepo",
+            token="testtoken",
+            base_branch="main",
+            auto_confirm=True,
+        )
+
+    assert mr_url == "https://gitlab.com/testowner/testrepo/-/merge_requests/12"
+    assert test_file.read_text(encoding="utf-8") == "patched code"
+
+    # Verify HTTP request configuration
+    req = mock_urlopen.call_args_list[1][0][0]
+    assert req.full_url == "https://gitlab.com/api/v4/projects/testowner%2Ftestrepo/merge_requests"
+    assert req.headers.get("Private-token") == "testtoken"
+
+
+@patch("subprocess.run")
+@patch("urllib.request.urlopen")
+def test_bitbucket_create_pr_success(
+    mock_urlopen: MagicMock, mock_run: MagicMock, tmp_path: Path
+) -> None:
+    test_file = tmp_path / "App.java"
+    test_file.write_text("vulnerable code", encoding="utf-8")
+
+    mock_run.return_value = MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    mock_get_response = MagicMock()
+    mock_get_response.read.return_value = b"{}"
+    mock_post_response = MagicMock()
+    mock_post_response.read.return_value = json.dumps(
+        {
+            "links": {
+                "html": {
+                    "href": "https://bitbucket.org/testowner/testrepo/pull-requests/3"
+                }
+            }
+        }
+    ).encode("utf-8")
+
+    mock_get_ctx = MagicMock()
+    mock_get_ctx.__enter__.return_value = mock_get_response
+    mock_post_ctx = MagicMock()
+    mock_post_ctx.__enter__.return_value = mock_post_response
+
+    mock_urlopen.side_effect = [mock_get_ctx, mock_post_ctx]
+
+    with patch.dict("os.environ", {"PHOENIXSEC_VCS_PROVIDER": "bitbucket"}):
+        automation = GitHubPRAutomation()
+        pr_url = automation.create_pull_request(
+            file_path=str(test_file),
+            patched_code="patched code",
+            vulnerability_type="SQL Injection",
+            recommendation="Use parameterization.",
+            owner="testowner",
+            repo="testrepo",
+            token="testtoken",
+            base_branch="main",
+            auto_confirm=True,
+        )
+
+    assert pr_url == "https://bitbucket.org/testowner/testrepo/pull-requests/3"
+    assert test_file.read_text(encoding="utf-8") == "patched code"
+
+    req = mock_urlopen.call_args_list[1][0][0]
+    assert req.full_url == "https://api.bitbucket.org/2.0/repositories/testowner/testrepo/pullrequests"
+    assert req.headers.get("Authorization") == "Bearer testtoken"

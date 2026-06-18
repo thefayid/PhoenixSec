@@ -505,7 +505,7 @@ def scan(
                 continue
             try:
                 success, patched_code, is_ai_patch = ai_patcher.patch_with_fallback(
-                    f_path_obj, file_findings
+                    f_path_obj, file_findings, auto_confirm=yes
                 )
                 if success:
                     patch_type_label = " (AI-Generated)" if is_ai_patch else ""

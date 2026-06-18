@@ -444,7 +444,7 @@ class AIPatcher:
                     temp_file.unlink()
 
     def patch_with_fallback(
-        self, file_path: Path, findings: list[Finding]
+        self, file_path: Path, findings: list[Finding], auto_confirm: bool = False
     ) -> tuple[bool, str, bool]:
         """Apply rule-based patch, falling back to AI patch generation if needed.
 
@@ -454,6 +454,8 @@ class AIPatcher:
           File path to patch.
         findings : list[Finding]
           List of findings detected in this file.
+        auto_confirm : bool, optional
+          If True, bypass interactive diff preview and confirmation.
 
         Returns
         -------
@@ -469,6 +471,10 @@ class AIPatcher:
         patcher = Patcher()
         rule_patched, summary, changed_lines = patcher.patch(original_code, findings)
 
+        patched_code = None
+        is_ai_patch = False
+        success = False
+
         if changed_lines:
             log.info(f"AI Patch fallback: Rule-based patch succeeded for {file_path.name}.")
             try:
@@ -477,76 +483,116 @@ class AIPatcher:
                     original_code, rule_patched, file_path, findings, changed_lines
                 )
                 if val_ok:
-                    file_path.write_text(rule_patched, encoding="utf-8")
-                    return True, rule_patched, False
+                    patched_code = rule_patched
+                    is_ai_patch = False
+                    success = True
             except Exception as exc:
                 log.warning(f"AI Patch fallback: Validation of rule-based patch failed: {exc}")
 
-            # Revert to original before fallback
-            file_path.write_text(original_code, encoding="utf-8")
+            if not success:
+                # Revert to original before fallback
+                file_path.write_text(original_code, encoding="utf-8")
 
         # 2. Fall back to AI patch generation with self-healing loop
-        log.info(
-            f"AI Patch fallback: Rule-based patching failed or was invalid for "
-            f"{file_path.name}. Querying AI..."
-        )
-        last_patched = original_code
+        if not success:
+            log.info(
+                f"AI Patch fallback: Rule-based patching failed or was invalid for "
+                f"{file_path.name}. Querying AI..."
+            )
+            last_patched = original_code
 
-        # Patch finding by finding (using the latest code state)
-        for finding in findings:
-            try:
-                # Run up to 3 attempts for self-healing
-                max_attempts = 3
-                attempt = 0
-                patched = last_patched
-                val_ok = False
-                errors: list[str] = []
+            # Patch finding by finding (using the latest code state)
+            for finding in findings:
+                try:
+                    # Run up to 3 attempts for self-healing
+                    max_attempts = 3
+                    attempt = 0
+                    patched = last_patched
+                    val_ok = False
+                    errors: list[str] = []
 
-                while attempt < max_attempts:
-                    attempt += 1
-                    if attempt == 1:
-                        patched = self.generate_patch(last_patched, finding)
-                    else:
-                        error_reason = errors[-1] if errors else "unknown failure"
-                        log.info(f"Self-healing: Attempt {attempt} to fix previous patch failure: {error_reason}")
-                        heal_prompt = (
-                            f"Your previous patched code has failed validation check: {error_reason}\n\n"
-                            f"Here is the original code:\n"
-                            f"```\n{last_patched}\n```\n\n"
-                            f"Here is the failed patched code you generated:\n"
-                            f"```\n{patched}\n```\n\n"
-                            f"Instructions:\n"
-                            f"1. Generate a corrected/patched version of the source code that fixes both "
-                            f"the original vulnerability AND compiles/passes tests successfully.\n"
-                            f"2. Output ONLY the complete corrected/patched source code. No explanations, no markdown block wrappers unless the raw response consists only of the block."
-                        )
-                        # Query configured provider
-                        provider = self._config.patching.provider.lower()
-                        if provider == "ollama":
-                            patched = self._query_ollama(heal_prompt)
+                    while attempt < max_attempts:
+                        attempt += 1
+                        if attempt == 1:
+                            patched = self.generate_patch(last_patched, finding)
                         else:
-                            patched = self._query_gemini(heal_prompt)
+                            error_reason = errors[-1] if errors else "unknown failure"
+                            log.info(f"Self-healing: Attempt {attempt} to fix previous patch failure: {error_reason}")
+                            heal_prompt = (
+                                f"Your previous patched code has failed validation check: {error_reason}\n\n"
+                                f"Here is the original code:\n"
+                                f"```\n{last_patched}\n```\n\n"
+                                f"Here is the failed patched code you generated:\n"
+                                f"```\n{patched}\n```\n\n"
+                                f"Instructions:\n"
+                                f"1. Generate a corrected/patched version of the source code that fixes both "
+                                f"the original vulnerability AND compiles/passes tests successfully.\n"
+                                f"2. Output ONLY the complete corrected/patched source code. No explanations, no markdown block wrappers unless the raw response consists only of the block."
+                            )
+                            # Query configured provider
+                            provider = self._config.patching.provider.lower()
+                            if provider == "ollama":
+                                patched = self._query_ollama(heal_prompt)
+                            else:
+                                patched = self._query_gemini(heal_prompt)
 
-                    errors = []
-                    val_ok = self.validate_patch(original_code, patched, file_path, finding, error_container=errors)
+                        errors = []
+                        val_ok = self.validate_patch(original_code, patched, file_path, finding, error_container=errors)
+                        if val_ok:
+                            break
+
                     if val_ok:
-                        break
-
-                if val_ok:
-                    last_patched = patched
-                else:
-                    log.warning(
-                        f"AI Patch fallback: AI patch rejected for finding at line "
-                        f"{finding.line_number} after self-healing attempts."
-                    )
-                    # Revert to last good state (or original)
+                        last_patched = patched
+                    else:
+                        log.warning(
+                            f"AI Patch fallback: AI patch rejected for finding at line "
+                            f"{finding.line_number} after self-healing attempts."
+                        )
+                        # Revert to last good state (or original)
+                        file_path.write_text(original_code, encoding="utf-8")
+                        return False, original_code, False
+                except Exception as exc:
+                    log.error(f"AI Patch fallback failed for finding: {exc}")
                     file_path.write_text(original_code, encoding="utf-8")
                     return False, original_code, False
-            except Exception as exc:
-                log.error(f"AI Patch fallback failed for finding: {exc}")
-                file_path.write_text(original_code, encoding="utf-8")
-                return False, original_code, False
 
-        # Successfully patched all findings!
-        file_path.write_text(last_patched, encoding="utf-8")
-        return True, last_patched, True
+            patched_code = last_patched
+            is_ai_patch = True
+            success = True
+
+        if success and patched_code is not None:
+            # Interactive confirmation prompt showing unified colorized diff using rich
+            import sys
+            if not auto_confirm and sys.stdin.isatty():
+                import difflib
+                import typer
+                from rich.syntax import Syntax
+                from rich.console import Console
+
+                console = Console()
+                diff_lines = list(difflib.unified_diff(
+                    original_code.splitlines(keepends=True),
+                    patched_code.splitlines(keepends=True),
+                    fromfile=f"a/{file_path.name}",
+                    tofile=f"b/{file_path.name}"
+                ))
+
+                if diff_lines:
+                    console.print(f"\n[bold cyan]Proposed changes for {file_path.name}:[/bold cyan]")
+                    diff_text = "".join(diff_lines)
+                    console.print(Syntax(diff_text, "diff", theme="monokai", background_color="default"))
+                    console.print("")
+
+                    try:
+                        if not typer.confirm("Apply this patch?"):
+                            console.print(f"[yellow]Patch for {file_path.name} declined by user.[/yellow]")
+                            return False, original_code, False
+                    except typer.Abort:
+                        console.print(f"\n[yellow]Patch for {file_path.name} declined by user.[/yellow]")
+                        return False, original_code, False
+
+            # Successfully confirmed or auto_confirmed, write to file path!
+            file_path.write_text(patched_code, encoding="utf-8")
+            return True, patched_code, is_ai_patch
+
+        return False, original_code, False
