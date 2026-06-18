@@ -47,6 +47,7 @@ import phoenixsec.rules.broken_auth  # noqa: F401
 import phoenixsec.rules.command_injection  # noqa: F401
 import phoenixsec.rules.csrf  # noqa: F401
 import phoenixsec.rules.insecure_deserialization  # noqa: F401
+import phoenixsec.rules.iac  # noqa: F401
 import phoenixsec.rules.ldap_injection  # noqa: F401
 import phoenixsec.rules.misconfiguration  # noqa: F401
 import phoenixsec.rules.nosql_injection  # noqa: F401

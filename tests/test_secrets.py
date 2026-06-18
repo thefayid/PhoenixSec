@@ -176,3 +176,44 @@ class TestRuleRegistryIntegration:
 
         java_rules = [r.rule_id for r in reg.get_rules("java")]
         assert "ALL-SEC-001" in java_rules
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Active Secret Verification tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestActiveSecretVerification:
+    def test_verify_github_token_mocked(self, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        import urllib.request
+        from phoenixsec.rules.secrets import verify_secret
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.__enter__.return_value = mock_response
+        
+        # Mock urllib.request.urlopen to return mock_response
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: mock_response)
+        
+        assert verify_secret("GitHub Token", "ghp_mocktoken12345678901234567890123456") is True
+
+    def test_verify_openai_token_mocked(self, monkeypatch) -> None:
+        from unittest.mock import MagicMock
+        import urllib.request
+        from phoenixsec.rules.secrets import verify_secret
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.__enter__.return_value = mock_response
+        
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: mock_response)
+        
+        assert verify_secret("Generic Key", "sk-proj-mocktoken1234567890abcdef1234") is True
+
+    def test_verify_secret_offline_mode(self, monkeypatch) -> None:
+        from phoenixsec.rules.secrets import verify_secret
+
+        monkeypatch.setenv("PHOENIXSEC_OFFLINE", "1")
+        # Should return False immediately without calling urlopen
+        assert verify_secret("GitHub Token", "ghp_mocktoken12345678901234567890123456") is False
+

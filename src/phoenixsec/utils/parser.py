@@ -278,6 +278,21 @@ class FileParser:
             multiline_comment=None,
             encoding_hints=("utf-8", "latin-1"),
         ),
+        # ── IaC ────────────────────────────────────────────────────────────
+        ".tf": LanguageInfo(
+            name="Terraform",
+            extension=".tf",
+            comment_prefixes=("#", "//"),
+            multiline_comment=("/*", "*/"),
+            encoding_hints=("utf-8",),
+        ),
+        "dockerfile": LanguageInfo(
+            name="Dockerfile",
+            extension="dockerfile",
+            comment_prefixes=("#",),
+            multiline_comment=None,
+            encoding_hints=("utf-8",),
+        ),
     }
 
     #: Refuse files larger than 10 MB to prevent memory exhaustion.
@@ -327,7 +342,7 @@ class FileParser:
         self._check_extension(resolved)
         self._check_size(resolved)
 
-        lang_info = self.SUPPORTED_LANGUAGES[resolved.suffix.lower()]
+        lang_info = self.SUPPORTED_LANGUAGES[self._get_extension_key(resolved)]
         content, encoding = self._decode(resolved, lang_info.encoding_hints)
 
         log.debug(
@@ -370,7 +385,7 @@ class FileParser:
             print(lang.extension)   # ".java"
         """
         self._check_extension(Path(path))
-        return self.SUPPORTED_LANGUAGES[Path(path).suffix.lower()]
+        return self.SUPPORTED_LANGUAGES[self._get_extension_key(Path(path))]
 
     def validate_file(self, path: str | Path) -> FileMetadata:
         """Validate a source file and return rich metadata about it.
@@ -418,7 +433,7 @@ class FileParser:
         self._check_extension(resolved)
         self._check_size(resolved)
 
-        lang_info = self.SUPPORTED_LANGUAGES[resolved.suffix.lower()]
+        lang_info = self.SUPPORTED_LANGUAGES[self._get_extension_key(resolved)]
         content, encoding = self._decode(resolved, lang_info.encoding_hints)
 
         file_stat = resolved.stat()
@@ -487,7 +502,14 @@ class FileParser:
         bool
             ``True`` if the extension is in ``SUPPORTED_LANGUAGES``.
         """
-        return Path(path).suffix.lower() in cls.SUPPORTED_LANGUAGES
+        return cls._get_extension_key(Path(path)) in cls.SUPPORTED_LANGUAGES
+
+    @classmethod
+    def _get_extension_key(cls, path: Path) -> str:
+        """Get canonical extension lookup key, mapping Dockerfile to dockerfile."""
+        if path.name == "Dockerfile":
+            return "dockerfile"
+        return path.suffix.lower()
 
     # ── Private helpers ────────────────────────────────────────────────────────
 
@@ -522,7 +544,7 @@ class FileParser:
     @classmethod
     def _check_extension(cls, path: Path) -> None:
         """Raise ``UnsupportedLanguageError`` if the file extension is not supported."""
-        ext = path.suffix.lower()
+        ext = cls._get_extension_key(path)
         if not ext:
             raise UnsupportedLanguageError(
                 f"File has no extension — cannot determine language: {path.name}",

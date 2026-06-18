@@ -57,6 +57,7 @@ _ASSIGNMENT_RE = re.compile(
 # ── Specific Secret Formats ───────────────────────────────────────────────────
 _AWS_KEY_RE = re.compile(r"\b(AKIA[0-9A-Z]{16})\b")
 _GENERIC_KEY_RE = re.compile(r"\b(sk-[a-zA-Z0-9]{24,40})\b")
+_GITHUB_TOKEN_RE = re.compile(r"\b(ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9_]{82})\b")
 
 # ── Placeholder Suppressor Heuristic ──────────────────────────────────────────
 _PLACEHOLDER_RE = re.compile(
@@ -78,6 +79,50 @@ def shannon_entropy(s: str) -> float:
     return -sum(p * math.log2(p) for p in probabilities)
 
 
+def verify_secret(secret_type: str, value: str) -> bool:
+    """Verify if a detected secret is active by pinging the provider's API.
+
+    Returns True if verified active, False otherwise.
+    """
+    import os
+    if os.environ.get("PHOENIXSEC_OFFLINE") == "1" or os.environ.get("PHOENIXSEC_DISABLE_SECRET_VALIDATION") == "1":
+        return False
+
+    secret_type_lower = secret_type.lower()
+    
+    # 1. GitHub API Verification
+    if "github" in secret_type_lower or value.startswith("ghp_") or value.startswith("github_pat_"):
+        import urllib.request
+        import urllib.error
+        req = urllib.request.Request(
+            "https://api.github.com/user",
+            headers={"Authorization": f"token {value}", "User-Agent": "PhoenixSec-Scanner"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=1.5) as response:
+                if response.status == 200:
+                    return True
+        except Exception:
+            return False
+
+    # 2. OpenAI API Verification
+    elif "openai" in secret_type_lower or "generic key" in secret_type_lower or value.startswith("sk-"):
+        import urllib.request
+        import urllib.error
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/models",
+            headers={"Authorization": f"Bearer {value}", "User-Agent": "PhoenixSec-Scanner"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=1.5) as response:
+                if response.status == 200:
+                    return True
+        except Exception:
+            return False
+
+    return False
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Scorer
 # ══════════════════════════════════════════════════════════════════════════════
@@ -95,7 +140,7 @@ class _SecretMatch:
         score = 0.0
 
         # Base configuration matches
-        if self.secret_type in {"AWS Key", "Generic Key"}:
+        if self.secret_type in {"AWS Key", "Generic Key", "GitHub Token"}:
             score += 0.70
         else:
             # Identifier matching
@@ -231,7 +276,19 @@ class HardcodedSecretsRule(BaseRule):
                     )
                 )
 
-            # 3. Variable assignment checks
+            # 3. GitHub Token specific check
+            github_match = _GITHUB_TOKEN_RE.search(line)
+            if github_match:
+                matches.append(
+                    _SecretMatch(
+                        line_number=idx + 1,
+                        matched_line=line,
+                        secret_type="GitHub Token",
+                        secret_value=github_match.group(1),
+                    )
+                )
+
+            # 4. Variable assignment checks
             assign_match = _ASSIGNMENT_RE.search(line)
             if assign_match:
                 matches.append(
@@ -257,13 +314,22 @@ class HardcodedSecretsRule(BaseRule):
                 if score >= 0.50:
                     if match.line_number not in seen_lines:
                         seen_lines.add(match.line_number)
+
+                        # Active validation check
+                        is_active = verify_secret(match.secret_type, match.secret_value)
+
+                        sink_msg = "Hardcoded value in variable assignment"
+                        if is_active:
+                            sink_msg = "Active and verified hardcoded secret via API ping"
+                            score = 1.0
+
                         findings.append(
                             self._make_finding(
                                 file_path,
                                 line_number=match.line_number,
                                 snippet=match.matched_line.strip(),
                                 source=match.secret_type,
-                                sink="Hardcoded value in variable assignment",
+                                sink=sink_msg,
                                 confidence=score,
                             )
                         )

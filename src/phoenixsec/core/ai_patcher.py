@@ -23,8 +23,10 @@ log = get_logger(__name__)
 class AIPatcher:
     """Fallback patch generation using LLM API, with verification and rollback."""
 
-    def __init__(self, rule_engine: RuleEngine | None = None) -> None:
+    def __init__(self, rule_engine: RuleEngine | None = None, config = None) -> None:
         self._rule_engine = rule_engine or RuleEngine()
+        from phoenixsec.core.config import load_config
+        self._config = config or load_config()
 
     def _find_venv_bin(self, bin_name: str) -> Path | None:
         """Find executable dynamically in venv folders or current Python prefix."""
@@ -47,54 +49,45 @@ class AIPatcher:
 
         return None
 
-    def generate_patch(self, code: str, finding: Finding) -> str:
-        """Call the Google Gemini API to generate a secure patch for the vulnerability.
+    def _query_ollama(self, prompt: str) -> str:
+        """Query the local Ollama API to generate a patch."""
+        url = f"{self._config.patching.ollama_url}/api/generate"
+        payload = {
+            "model": self._config.patching.model if self._config.patching.model and "gemini" not in self._config.patching.model else "qwen2.5-coder",
+            "prompt": prompt,
+            "stream": False,
+        }
+        headers = {"Content-Type": "application/json"}
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30.0) as response:
+                res_data = json.loads(response.read().decode("utf-8"))
+                text = res_data.get("response", "")
+                if not text:
+                    raise PhoenixSecError("Ollama API returned empty response.")
+                
+                # Extract code if wrapped in markdown fences
+                match = re.search(r"```(?:[a-zA-Z]+)?\n(.*?)```", text, re.DOTALL)
+                if match:
+                    return match.group(1).strip()
+                return text.strip()
+        except Exception as exc:
+            log.error(f"Ollama Patch Generation API call failed: {exc}")
+            raise PhoenixSecError(f"Ollama API Call failed: {exc}") from exc
 
-        Parameters
-        ----------
-        code : str
-          The original source code.
-        finding : Finding
-          The vulnerability finding to remediate.
-
-        Returns
-        -------
-        str
-          The patched source code.
-        """
+    def _query_gemini(self, prompt: str) -> str:
+        """Query the Google Gemini API to generate a patch."""
         api_key = os.environ.get("PHOENIXSEC_AI_KEY") or os.environ.get("GEMINI_API_KEY")
         if not api_key:
             raise PhoenixSecError(
                 "Missing PHOENIXSEC_AI_KEY or GEMINI_API_KEY environment variable."
             )
 
-        file_name = Path(finding.file_path).name if finding.file_path else "source_file"
-        prompt = (
-            "You are a secure software engineering assistant. Your task is to fix "
-            "a security vulnerability in the provided source code.\n\n"
-            f"Vulnerability Details:\n"
-            f"- File: {file_name}\n"
-            f"- Type: {finding.vulnerability_type.value}\n"
-            f"- Line Number: {finding.line_number}\n"
-            f"- Sink: {finding.sink or 'N/A'}\n"
-            f"- Source: {finding.source or 'N/A'}\n"
-            f"- Recommendation: {finding.recommendation}\n\n"
-            "Here is the original source code:\n"
-            "```\n"
-            f"{code}\n"
-            "```\n\n"
-            "Instructions:\n"
-            "1. Output ONLY the complete corrected/patched source code for the file.\n"
-            "2. Fix the specified vulnerability. Do not introduce syntax errors, "
-            "new vulnerabilities, or break existing behavior.\n"
-            "3. Retain all other imports, structure, and unrelated logic.\n"
-            "4. Do NOT wrap code in markdown block wrappers unless the raw response "
-            "consists ONLY of the code block itself. Do NOT write conversational text, "
-            "introduction, or explanations.\n"
-        )
-
         base_url = "https://generativelanguage.googleapis.com/v1beta/models"
-        url = f"{base_url}/gemini-1.5-flash:generateContent?key={api_key}"
+        model_name = self._config.patching.model if "gemini" in self._config.patching.model else "gemini-1.5-flash"
+        url = f"{base_url}/{model_name}:generateContent?key={api_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.1, "responseMimeType": "text/plain"},
@@ -126,7 +119,6 @@ class AIPatcher:
 
                     return text.strip()
             except urllib.error.HTTPError as exc:
-                # Retry on 429 (Too Many Requests) or 5xx (Server Error)
                 is_retryable = exc.code == 429 or (500 <= exc.code < 600)
                 if is_retryable and attempt < max_retries:
                     sleep_time = backoff * (2**attempt)
@@ -138,21 +130,54 @@ class AIPatcher:
                     continue
                 log.error(f"AI Patch Generation API call failed on HTTP error: {exc}")
                 raise PhoenixSecError(f"AI Patch API Call failed: {exc}") from exc
-            except urllib.error.URLError as exc:
-                # Connection / Timeout error
-                if attempt < max_retries:
-                    sleep_time = backoff * (2**attempt)
-                    log.warning(
-                        f"AI Patch Generation API connection error: {exc.reason}. "
-                        f"Retrying in {sleep_time}s... (Attempt {attempt + 1}/{max_retries + 1})"
-                    )
-                    time.sleep(sleep_time)
-                    continue
-                log.error(f"AI Patch Generation API call failed: {exc}")
-                raise PhoenixSecError(f"AI Patch API Call failed: {exc}") from exc
             except Exception as exc:
-                log.error(f"AI Patch Generation API call failed with unexpected error: {exc}")
                 raise PhoenixSecError(f"AI Patch API Call failed: {exc}") from exc
+
+    def generate_patch(self, code: str, finding: Finding) -> str:
+        """Generate a secure patch for the vulnerability using the configured AI provider.
+
+        Parameters
+        ----------
+        code : str
+          The original source code.
+        finding : Finding
+          The vulnerability finding to remediate.
+
+        Returns
+        -------
+        str
+          The patched source code.
+        """
+        file_name = Path(finding.file_path).name if finding.file_path else "source_file"
+        prompt = (
+            "You are a secure software engineering assistant. Your task is to fix "
+            "a security vulnerability in the provided source code.\n\n"
+            f"Vulnerability Details:\n"
+            f"- File: {file_name}\n"
+            f"- Type: {finding.vulnerability_type.value}\n"
+            f"- Line Number: {finding.line_number}\n"
+            f"- Sink: {finding.sink or 'N/A'}\n"
+            f"- Source: {finding.source or 'N/A'}\n"
+            f"- Recommendation: {finding.recommendation}\n\n"
+            "Here is the original source code:\n"
+            "```\n"
+            f"{code}\n"
+            "```\n\n"
+            "Instructions:\n"
+            "1. Output ONLY the complete corrected/patched source code for the file.\n"
+            "2. Fix the specified vulnerability. Do not introduce syntax errors, "
+            "new vulnerabilities, or break existing behavior.\n"
+            "3. Retain all other imports, structure, and unrelated logic.\n"
+            "4. Do NOT wrap code in markdown block wrappers unless the raw response "
+            "consists ONLY of the code block itself. Do NOT write conversational text, "
+            "introduction, or explanations.\n"
+        )
+
+        provider = self._config.patching.provider.lower()
+        if provider == "ollama":
+            return self._query_ollama(prompt)
+        return self._query_gemini(prompt)
+
 
     def analyze_false_positive(self, code: str, finding: Finding) -> tuple[bool, str]:
         """Analyze if a finding is a false positive using the Google Gemini API.
@@ -252,6 +277,7 @@ class AIPatcher:
         file_path: Path,
         findings: Finding | list[Finding],
         changed_lines: list[int] | None = None,
+        error_container: list[str] | None = None,
     ) -> bool:
         """Validate the patch using syntax compilation, re-scanning, and test execution.
 
@@ -268,6 +294,8 @@ class AIPatcher:
         changed_lines : list[int] | None
           Optional list of line numbers modified by the patch. If provided,
           only findings on these lines are expected to be resolved.
+        error_container : list[str] | None
+          Optional list to collect validation error description strings.
 
         Returns
         -------
@@ -285,13 +313,13 @@ class AIPatcher:
                     log.warning(
                         f"AI Patch Validation: Syntax check failed on {file_path.name}: {exc}"
                     )
+                    if error_container is not None:
+                        error_container.append(f"Syntax compilation error: {exc}")
                     return False
 
             # 2. Re-Scan Validation
             # Verify the original finding is resolved and no new
             # HIGH/CRITICAL severities are introduced.
-            # Use scan_code since we don't want Semgrep executing on a
-            # non-existent temp file on disk, or we can read the temp file.
             lang = "python" if file_path.suffix.lower() == ".py" else "java"
             res_orig = self._rule_engine.scan_code(
                 original_code, file_path=str(file_path), language=lang
@@ -304,6 +332,7 @@ class AIPatcher:
 
             # Check if original vulnerability is still there (matching type and close lines)
             still_vulnerable = False
+            failed_finding = None
             for original_finding in findings_list:
                 if changed_lines is not None and original_finding.line_number not in changed_lines:
                     continue
@@ -313,6 +342,7 @@ class AIPatcher:
                     line_dist = abs((f.line_number or 0) - (original_finding.line_number or 0)) <= 5
                     if same_type and line_dist:
                         still_vulnerable = True
+                        failed_finding = f
                         break
 
                 if still_vulnerable:
@@ -323,6 +353,10 @@ class AIPatcher:
                     f"AI Patch Validation: Patch failed to resolve "
                     f"vulnerability in {file_path.name}."
                 )
+                if error_container is not None:
+                    desc = failed_finding.vulnerability_type if failed_finding else "original vulnerability"
+                    line = failed_finding.line_number if failed_finding else "N/A"
+                    error_container.append(f"Vulnerability {desc} was still detected at line {line}")
                 return False
 
             # Check if new high/critical issues introduced
@@ -348,6 +382,10 @@ class AIPatcher:
                         f"AI Patch Validation: Patch introduced new vulnerability "
                         f"{f.vulnerability_type} ({f.severity.name}) in {file_path.name}."
                     )
+                    if error_container is not None:
+                        error_container.append(
+                            f"Introduced new vulnerability {f.vulnerability_type} ({f.severity.name}) at line {f.line_number}"
+                        )
                     return False
 
             # 3. Test Suite Execution Check
@@ -382,16 +420,23 @@ class AIPatcher:
             # Run test process
             test_res = subprocess.run(cmd_args, capture_output=True, check=False)
             if test_res.returncode != 0:
+                stderr_output = test_res.stderr.decode().strip() or test_res.stdout.decode().strip()
                 log.warning(
                     f"AI Patch Validation: Test suite failed with code "
-                    f"{test_res.returncode}. Stderr: {test_res.stderr.decode().strip()}"
+                    f"{test_res.returncode}. Stderr: {stderr_output}"
                 )
+                if error_container is not None:
+                    error_container.append(
+                        f"Test suite execution failed with exit code {test_res.returncode}. Output:\n{stderr_output}"
+                    )
                 return False
 
             return True
 
         except Exception as exc:
             log.error(f"AI Patch Validation encountered exception: {exc}")
+            if error_container is not None:
+                error_container.append(f"Unexpected validation exception: {exc}")
             return False
         finally:
             if temp_file.is_file():
@@ -426,7 +471,6 @@ class AIPatcher:
 
         if changed_lines:
             log.info(f"AI Patch fallback: Rule-based patch succeeded for {file_path.name}.")
-            # Write to file temporarily to test
             try:
                 # Validate the rule-based patch as well to be safe
                 val_ok = self.validate_patch(
@@ -441,7 +485,7 @@ class AIPatcher:
             # Revert to original before fallback
             file_path.write_text(original_code, encoding="utf-8")
 
-        # 2. Fall back to AI patch generation
+        # 2. Fall back to AI patch generation with self-healing loop
         log.info(
             f"AI Patch fallback: Rule-based patching failed or was invalid for "
             f"{file_path.name}. Querying AI..."
@@ -451,15 +495,49 @@ class AIPatcher:
         # Patch finding by finding (using the latest code state)
         for finding in findings:
             try:
-                patched = self.generate_patch(last_patched, finding)
-                # Validate this patch
-                val_ok = self.validate_patch(original_code, patched, file_path, finding)
+                # Run up to 3 attempts for self-healing
+                max_attempts = 3
+                attempt = 0
+                patched = last_patched
+                val_ok = False
+                errors: list[str] = []
+
+                while attempt < max_attempts:
+                    attempt += 1
+                    if attempt == 1:
+                        patched = self.generate_patch(last_patched, finding)
+                    else:
+                        error_reason = errors[-1] if errors else "unknown failure"
+                        log.info(f"Self-healing: Attempt {attempt} to fix previous patch failure: {error_reason}")
+                        heal_prompt = (
+                            f"Your previous patched code has failed validation check: {error_reason}\n\n"
+                            f"Here is the original code:\n"
+                            f"```\n{last_patched}\n```\n\n"
+                            f"Here is the failed patched code you generated:\n"
+                            f"```\n{patched}\n```\n\n"
+                            f"Instructions:\n"
+                            f"1. Generate a corrected/patched version of the source code that fixes both "
+                            f"the original vulnerability AND compiles/passes tests successfully.\n"
+                            f"2. Output ONLY the complete corrected/patched source code. No explanations, no markdown block wrappers unless the raw response consists only of the block."
+                        )
+                        # Query configured provider
+                        provider = self._config.patching.provider.lower()
+                        if provider == "ollama":
+                            patched = self._query_ollama(heal_prompt)
+                        else:
+                            patched = self._query_gemini(heal_prompt)
+
+                    errors = []
+                    val_ok = self.validate_patch(original_code, patched, file_path, finding, error_container=errors)
+                    if val_ok:
+                        break
+
                 if val_ok:
                     last_patched = patched
                 else:
                     log.warning(
                         f"AI Patch fallback: AI patch rejected for finding at line "
-                        f"{finding.line_number}."
+                        f"{finding.line_number} after self-healing attempts."
                     )
                     # Revert to last good state (or original)
                     file_path.write_text(original_code, encoding="utf-8")

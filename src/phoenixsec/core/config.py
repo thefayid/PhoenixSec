@@ -153,6 +153,18 @@ class PatchingConfig(BaseModel):
         default=True,
         description="Create a .bak backup before patching each file.",
     )
+    provider: str = Field(
+        default="gemini",
+        description="AI provider to use for patching (gemini | ollama).",
+    )
+    ollama_url: str = Field(
+        default="http://localhost:11434",
+        description="Base URL for local Ollama server.",
+    )
+    model: str = Field(
+        default="gemini-1.5-flash",
+        description="AI model name to request for patches.",
+    )
 
 
 # ── Notifiers config models ───────────────────────────────────────────────────

@@ -400,3 +400,83 @@ def test_validate_patch_skips_test_execution_by_default(
     )
     assert result
     mock_run.assert_not_called()
+
+
+@patch("urllib.request.urlopen")
+def test_generate_patch_ollama_success(
+    mock_urlopen: MagicMock, dummy_finding: Finding
+) -> None:
+    from phoenixsec.core.config import PhoenixSecConfig
+    from phoenixsec.core.ai_patcher import AIPatcher
+
+    config = PhoenixSecConfig()
+    config.patching.provider = "ollama"
+    config.patching.ollama_url = "http://localhost:11434"
+    config.patching.model = "qwen2.5-coder"
+
+    mock_response = MagicMock()
+    mock_response.read.return_value = json.dumps(
+        {
+            "response": "```python\nprint('ollama patched code')\n```"
+        }
+    ).encode("utf-8")
+    mock_urlopen.return_value.__enter__.return_value = mock_response
+
+    patcher = AIPatcher(config=config)
+    patched_code = patcher.generate_patch("print('vuln')", dummy_finding)
+
+    assert patched_code == "print('ollama patched code')"
+    mock_urlopen.assert_called_once()
+    req = mock_urlopen.call_args[0][0]
+    assert "localhost:11434" in req.full_url
+    data = json.loads(req.data.decode("utf-8"))
+    assert data["model"] == "qwen2.5-coder"
+    assert data["stream"] is False
+
+
+@patch("urllib.request.urlopen")
+def test_patch_with_fallback_self_healing_success(
+    mock_urlopen: MagicMock, dummy_finding: Finding, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PHOENIXSEC_AI_KEY", "test_gemini_key")
+    
+    file_path = tmp_path / "app.py"
+    file_path.write_text("def query(request):\n    cursor.execute('SELECT ' + request.GET['id'])", encoding="utf-8")
+
+    mock_response_1 = MagicMock()
+    mock_response_1.read.return_value = json.dumps(
+        {
+            "candidates": [
+                {"content": {"parts": [{"text": "def query(request):\n    invalid syntax !!!"}]}}
+            ]
+        }
+    ).encode("utf-8")
+
+    mock_response_2 = MagicMock()
+    mock_response_2.read.return_value = json.dumps(
+        {
+            "candidates": [
+                {"content": {"parts": [{"text": "def query(request):\n    pass"}]}}
+            ]
+        }
+    ).encode("utf-8")
+
+    mock_urlopen.side_effect = [
+        MagicMock(__enter__=MagicMock(return_value=mock_response_1)),
+        MagicMock(__enter__=MagicMock(return_value=mock_response_2)),
+    ]
+
+    from phoenixsec.rules.engine import EngineResult
+    patcher = AIPatcher()
+    mock_scan = MagicMock()
+    mock_scan.return_value = EngineResult(file_path=str(file_path), language="python", findings=[])
+    patcher._rule_engine.scan_code = mock_scan
+
+    success, patched_code, is_ai_patch = patcher.patch_with_fallback(file_path, [dummy_finding])
+
+    assert success is True
+    assert is_ai_patch is True
+    assert patched_code == "def query(request):\n    pass"
+    assert mock_urlopen.call_count == 2
+
+
