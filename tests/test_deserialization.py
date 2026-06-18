@@ -15,7 +15,7 @@ def test_python_deserialization_detection() -> None:
 import pickle
 def load_data(request):
     data = request.body
-    obj = pickle.loads(data)
+    obj = json.loads(data)
     return obj
 """
     rule = PythonInsecureDeserializationRule()
