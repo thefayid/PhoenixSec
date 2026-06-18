@@ -432,6 +432,12 @@ MIT License — see [LICENSE](LICENSE)
 
 ---
 
+## 🙏 Credits
+
+**Developed by [@thefayid](https://github.com/thefayid)**
+
+---
+
 <div align="center">
 
 **PhoenixSec** — *Born from the ashes of every security breach, so yours never happens.*

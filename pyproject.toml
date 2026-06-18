@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "phoenixsec"
 version = "0.1.0"
 description = "Autonomous DevSecOps security pipeline — scan, report, patch."
-authors = [{ name = "PhoenixSec Team" }]
+authors = [{ name = "thefayid" }]
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"

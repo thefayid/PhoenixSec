@@ -139,7 +139,9 @@ def version() -> None:
         ("Platform : ", "dim"),
         (f"{platform_str}\n", "bold white"),
         ("License  : ", "dim"),
-        (f"{phoenixsec.__license__}", "bold white"),
+        (f"{phoenixsec.__license__}\n", "bold white"),
+        ("Credits  : ", "dim"),
+        (f"{phoenixsec.__author__}", "bold green"),
     )
     console.print(
         Panel(panel_content, title="[bold cyan]PhoenixSec[/bold cyan]", border_style="cyan")

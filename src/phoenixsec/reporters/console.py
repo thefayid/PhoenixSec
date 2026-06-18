@@ -275,3 +275,5 @@ class ConsoleReporter(BaseReporter):
                     border_style="green",
                 )
             )
+
+        c.print("\n[dim]PhoenixSec — Developed by thefayid[/dim]")

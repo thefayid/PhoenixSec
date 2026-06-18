@@ -6,7 +6,7 @@ reports, and automatically patch certain vulnerability classes.
 """
 
 __version__ = "0.1.0"
-__author__ = "PhoenixSec Team"
+__author__ = "thefayid"
 __license__ = "MIT"
 
 __all__ = ["__version__", "__author__", "__license__"]
