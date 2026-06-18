@@ -1,0 +1,8 @@
+# Ignore rules definitions, tests, benchmarks, dashboard, ide files and Dockerfile to prevent scanner false positives on itself
+src
+tests
+samples
+benchmarks
+ide
+dashboard
+Dockerfile
