@@ -22,6 +22,8 @@ scanning:
     - ".ruff_cache"
     - "dist"
     - "build"
+    - "tests"
+    - "samples"
   exclude_extensions:     # File extensions to skip
     - ".pyc"
     - ".pyo"
