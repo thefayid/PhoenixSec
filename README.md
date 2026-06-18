@@ -51,6 +51,34 @@ Developer pushes code with SQLi on line 42
 
 ---
 
+## 🌟 Enterprise Features & Core Upgrades
+
+PhoenixSec is built to handle complex security workflows with modern engineering requirements:
+
+### 🔒 Active Secret Verification
+* **What it does:** Scans your code for credentials (API keys, tokens) and automatically performs a safe HTTP ping validation against third-party endpoints (e.g., GitHub, OpenAI) with a strict 1.5s timeout.
+* **Outcome:** If the token is live/active, its severity is elevated to `CRITICAL` with a confidence score of `1.0`. Inactive tokens retain their lower severity offline ratings, drastically reducing security triaging noise.
+
+### 🔗 Context-Aware Inter-Procedural Taint Analysis
+* **What it does:** Evaluates variable propagation across function boundaries, class constructors, and return values rather than just tracing within a single local scope.
+* **Outcome:** Traces dataflow accurately through complex call graphs to distinguish between truly tainted variables and safely sanitized code arguments.
+
+### 🏗️ Infrastructure as Code (IaC) Scanner
+* **What it does:** Expands coverage to cloud configuration scripts, scanning Dockerfiles and Terraform `.tf` configurations.
+* **Outcome:** Automatically alerts on insecure defaults:
+  - **Dockerfiles:** Root-user container execution, unpinned base image tags, and hardcoded secrets inside `ENV` directives.
+  - **Terraform:** Wide-open ingress rules (allowing ports 22/3389 to `0.0.0.0/0`) and public S3 bucket ACL misconfigurations.
+
+### 🏠 Local & Offline LLM Support (Ollama)
+* **What it does:** Protects proprietary enterprise source code by enabling local, 100% offline security patching.
+* **Outcome:** Swappable LLM engines supporting Ollama providers (e.g., `deepseek-coder`, `qwen2.5-coder`, `llama3`).
+
+### 🔄 AI Self-Healing Fix Loop
+* **What it does:** Prevents brittle patch generation by introducing a self-correcting loop.
+* **Outcome:** If a generated fix fails local compilation or triggers test suite errors, PhoenixSec runs up to a 3-attempt healing cycle. The validation compiler diagnostics/test outputs are fed back to the LLM to recursively correct code syntax, resulting in extremely high success rates for automated remediation.
+
+---
+
 ## ⚡ 5-Minute Quickstart
 
 ### 1. Install PhoenixSec
@@ -120,10 +148,11 @@ Create `.github/workflows/security.yml`:
 | **SQL Injection** | Python, Java | CWE-89 | 🔴 CRITICAL |
 | **Cross-Site Scripting (XSS)** | Python, JavaScript, TypeScript | CWE-79 | 🟠 HIGH |
 | **Command Injection** | Python, Java | CWE-78 | 🔴 CRITICAL |
-| **Hardcoded Secrets** | All languages | CWE-798 | 🟠 HIGH |
+| **Hardcoded Secrets** | All languages | CWE-798 | 🔴 CRITICAL (Live) / 🟠 HIGH |
 | **Path Traversal** | Python, JavaScript, Java | CWE-22 | 🟠 HIGH |
 | **SSRF** | Python, JavaScript, Java | CWE-918 | 🟠 HIGH |
 | **Insecure Deserialization** | Python, JavaScript, Java | CWE-502 | 🔴 CRITICAL |
+| **IaC Misconfigurations** | Terraform, Dockerfile | CWE-284 / CWE-269 | 🟠 HIGH / 🟡 MEDIUM |
 
 ---
 
@@ -135,6 +164,8 @@ Create `.github/workflows/security.yml`:
 | **Java** | ✅ Full | ✅ Yes | `.java` |
 | **JavaScript** | ✅ Full | 🔜 AI | `.js`, `.jsx`, `.mjs`, `.cjs` |
 | **TypeScript** | ✅ Full | 🔜 AI | `.ts`, `.tsx` |
+| **Terraform** | ✅ Full | ❌ No | `.tf` |
+| **Dockerfile** | ✅ Full | ❌ No | `Dockerfile` |
 | **Go** | ✅ Parser | 🔜 AI | `.go` |
 | **PHP** | ✅ Parser | 🔜 AI | `.php` |
 | **Ruby** | ✅ Parser | 🔜 AI | `.rb` |
@@ -387,23 +418,25 @@ phoenixsec scan ./src --format sarif
 
 ---
 
-## 🤖 AI-Powered Patching
+## 🤖 AI-Powered Patching & Self-Healing Loop
 
-When rule-based patching can't fix a vulnerability, PhoenixSec falls back to Gemini AI:
+When rule-based patching can't fix a vulnerability, PhoenixSec falls back to AI-powered patch generation:
 
-1. **Rule-based patch** attempted first (fast, deterministic)
-2. **Validation** — syntax check + re-scan + test suite run
-3. If validation fails → **Gemini AI** generates a fix
-4. AI patch validated the same way
-5. Fixed code committed and PR opened
+1. **Rule-based patch** attempted first (fast, deterministic).
+2. **Validation** — syntax compilation check + re-scan + project test suite run (via `PHOENIXSEC_TEST_CMD`).
+3. If validation fails → **AI patch generation** is triggered.
+4. If the generated AI patch fails validation (e.g., syntax errors, test failures), PhoenixSec enters a **3-attempt Self-Healing Loop**:
+   - The compiler/test error logs are captured and fed back to the LLM as corrective feedback.
+   - The LLM regenerates the patch addressing the errors.
+5. Once a patch passes all validation checks, the fixed code is written, committed, and a Pull Request is opened.
 
-Set `PHOENIXSEC_AI_KEY` or `GEMINI_API_KEY` to enable AI patching.
+Set `PHOENIXSEC_AI_KEY` or `GEMINI_API_KEY` to enable AI patching. Alternatively, configure a local offline model using Ollama.
 
 ---
 
 ## ⚙️ Configuration
 
-Edit `config.yaml` to customize behaviour:
+Edit `config.yaml` to customize behavior:
 
 ```yaml
 scanning:
@@ -422,6 +455,14 @@ reporting:
 logging:
   level: INFO
   json_mode: false
+
+patching:
+  enabled: true
+  dry_run: false
+  backup: true
+  provider: gemini # 'gemini' or 'ollama'
+  ollama_url: "http://localhost:11434"
+  model: gemini-1.5-flash # or e.g. 'qwen2.5-coder' / 'deepseek-coder' for Ollama
 ```
 
 ---
