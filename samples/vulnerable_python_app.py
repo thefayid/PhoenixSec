@@ -45,8 +45,8 @@ def get_user():
     cursor = conn.cursor()
 
     # ❌ VULNERABLE: String formatting injects user input directly into SQL
-    query = "SELECT * FROM users WHERE id = ?"
-    cursor.execute(query, (user_id,))
+    query = f"SELECT * FROM users WHERE id = {user_id}"
+    cursor.execute(query)
 
     # ✅ FIXED (what PhoenixSec --patch would generate):
     # cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
@@ -66,8 +66,8 @@ def login():
     cursor = conn.cursor()
 
     # ❌ VULNERABLE: Classic login bypass — ' OR '1'='1
-    query = "SELECT * FROM users WHERE username=? AND password=?"
-    cursor.execute(query, (username, password))
+    query = "SELECT * FROM users WHERE username='" + username + "' AND password='" + password + "'"
+    cursor.execute(query)
 
     user = cursor.fetchone()
     conn.close()

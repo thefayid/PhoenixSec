@@ -155,7 +155,12 @@ class AIPatcher:
                 raise PhoenixSecError(f"AI Patch API Call failed: {exc}") from exc
 
     def validate_patch(
-        self, original_code: str, patched_code: str, file_path: Path, finding: Finding
+        self,
+        original_code: str,
+        patched_code: str,
+        file_path: Path,
+        findings: Finding | list[Finding],
+        changed_lines: list[int] | None = None,
     ) -> bool:
         """Validate the patch using syntax compilation, re-scanning, and test execution.
 
@@ -167,8 +172,11 @@ class AIPatcher:
           The new code suggested by the LLM.
         file_path : Path
           Target file path.
-        finding : Finding
-          The original finding being resolved.
+        findings : Finding | list[Finding]
+          The original finding(s) being resolved.
+        changed_lines : list[int] | None
+          Optional list of line numbers modified by the patch. If provided,
+          only findings on these lines are expected to be resolved.
 
         Returns
         -------
@@ -201,13 +209,22 @@ class AIPatcher:
             res = self._rule_engine.scan_code(patched_code, file_path=str(file_path), language=lang)
             findings_after = res.findings
 
+            findings_list = findings if isinstance(findings, list) else [findings]
+
             # Check if original vulnerability is still there (matching type and close lines)
             still_vulnerable = False
-            for f in findings_after:
-                same_type = f.vulnerability_type == finding.vulnerability_type
-                line_dist = abs((f.line_number or 0) - (finding.line_number or 0)) <= 5
-                if same_type and line_dist:
-                    still_vulnerable = True
+            for original_finding in findings_list:
+                if changed_lines is not None and original_finding.line_number not in changed_lines:
+                    continue
+
+                for f in findings_after:
+                    same_type = f.vulnerability_type == original_finding.vulnerability_type
+                    line_dist = abs((f.line_number or 0) - (original_finding.line_number or 0)) <= 5
+                    if same_type and line_dist:
+                        still_vulnerable = True
+                        break
+
+                if still_vulnerable:
                     break
 
             if still_vulnerable:
@@ -321,7 +338,9 @@ class AIPatcher:
             # Write to file temporarily to test
             try:
                 # Validate the rule-based patch as well to be safe
-                val_ok = self.validate_patch(original_code, rule_patched, file_path, findings[0])
+                val_ok = self.validate_patch(
+                    original_code, rule_patched, file_path, findings, changed_lines
+                )
                 if val_ok:
                     file_path.write_text(rule_patched, encoding="utf-8")
                     return True, rule_patched, False
