@@ -111,7 +111,7 @@ def main_callback(
 # ── version command ────────────────────────────────────────────────────────────
 
 
-@app.command()
+@app.command(epilog="Examples:\n  phoenixsec version")
 def version() -> None:
     """Show PhoenixSec version and system information."""
     import sys
@@ -151,7 +151,7 @@ def version() -> None:
 # ── scan command ───────────────────────────────────────────────────────────────
 
 
-@app.command()
+@app.command(epilog="Examples:\n  phoenixsec scan ./src --severity HIGH --format json\n  phoenixsec scan ./src --patch")
 def scan(
     ctx: typer.Context,
     target: Annotated[
@@ -236,6 +236,7 @@ def scan(
         typer.Option(
             "--prove",
             help="Use the Agentic Red Teamer to generate exploits and prove vulnerabilities exist.",
+            hidden=True,
         ),
     ] = False,
     rotate_secrets: Annotated[
@@ -243,6 +244,7 @@ def scan(
         typer.Option(
             "--rotate-secrets",
             help="Automatically revoke and rotate any leaked hardcoded secrets.",
+            hidden=True,
         ),
     ] = False,
 ) -> None:
@@ -448,9 +450,9 @@ def scan(
     if prove or cfg.red_teamer.enabled:
         from phoenixsec.core.red_teamer import AgenticRedTeamer
         red_teamer = AgenticRedTeamer(rule_engine=engine, config=cfg)
-        
+
         console.print("[bold cyan]🤖 Initiating Agentic Red Teamer (Proof-of-Exploit)...[/bold cyan]")
-        
+
         from dataclasses import replace
         updated_red_teamer_findings = []
         for finding in report.findings:
@@ -458,15 +460,15 @@ def scan(
             if not f_path.is_file() or f_path.suffix.lower() != ".py":
                 updated_red_teamer_findings.append(finding)
                 continue
-                
+
             code_content = f_path.read_text(encoding="utf-8")
-            
+
             console.print(f"  [dim]Attempting to prove {finding.vulnerability_type.value} in {f_path.name}:{finding.line_number}[/dim]")
             is_proven, proof_details = red_teamer.attempt_exploit(finding, code_content, f_path)
-            
+
             finding = replace(finding, proven=is_proven, proof_details=proof_details)
             updated_red_teamer_findings.append(finding)
-            
+
             if is_proven:
                 console.print(f"  [bold green]✓ PROVEN:[/bold green] {finding.vulnerability_type.value}")
             else:
@@ -477,11 +479,11 @@ def scan(
     if rotate_secrets:
         from phoenixsec.core.secret_rotator import MockCloudSecretRotator
         rotator = MockCloudSecretRotator(workspace_root=Path.cwd())
-        
+
         has_secrets = any(f.vulnerability_type.value == "Hardcoded Secret" for f in report.findings)
         if has_secrets:
             console.print("[bold magenta]🔐 Initiating Ephemeral Secret Auto-Rotation...[/bold magenta]")
-            
+
             from dataclasses import replace
             updated_rotator_findings = []
             for finding in report.findings:
@@ -490,11 +492,11 @@ def scan(
                     if not f_path.is_file():
                         updated_rotator_findings.append(finding)
                         continue
-                    
+
                     code_content = f_path.read_text(encoding="utf-8")
                     is_rotated, details = rotator.revoke_and_rotate(finding, code_content)
                     finding = replace(finding, rotated=is_rotated)
-                    
+
                     if is_rotated:
                         console.print(details)
                     else:
@@ -775,7 +777,7 @@ def _display_rich_report(report: Report) -> None:
 # ── report command ─────────────────────────────────────────────────────────────
 
 
-@app.command()
+@app.command(epilog="Examples:\n  phoenixsec report ./reports/result.json --format html")
 def report(
     result_file: Annotated[
         Path,
@@ -845,7 +847,7 @@ def report(
 # ── install-hook command ───────────────────────────────────────────────────────
 
 
-@app.command(name="install-hook")
+@app.command(name="install-hook", epilog="Examples:\n  phoenixsec install-hook . --severity HIGH")
 def install_hook(
     target_dir: Annotated[
         Path,
@@ -991,7 +993,7 @@ exit 0
 # ── webhook command ────────────────────────────────────────────────────────────
 
 
-@app.command()
+@app.command(epilog="Examples:\n  phoenixsec webhook --port 8080 --secret mysecret --fail-on HIGH")
 def webhook(
     host: Annotated[
         str,
@@ -1087,7 +1089,7 @@ def webhook(
 # ── api command ────────────────────────────────────────────────────────────────
 
 
-@app.command(name="api")
+@app.command(name="api", epilog="Examples:\n  phoenixsec api --host 127.0.0.1 --port 8000")
 def api(
     host: Annotated[
         str,
@@ -1148,7 +1150,7 @@ def api(
 # ── benchmark command ──────────────────────────────────────────────────────────
 
 
-@app.command()
+@app.command(epilog="Examples:\n  phoenixsec benchmark --dir benchmarks")
 def benchmark(
     benchmarks_dir: Annotated[
         Path,
@@ -1299,7 +1301,7 @@ def benchmark(
 # ── scan-org command ───────────────────────────────────────────────────────────
 
 
-@app.command(name="scan-org")
+@app.command(name="scan-org", epilog="Examples:\n  phoenixsec scan-org my-org --format json\n  phoenixsec scan-org my-org --workers 8 --no-sca")
 def scan_org(
     ctx: typer.Context,
     org: Annotated[
@@ -1406,6 +1408,10 @@ def scan_org(
     from phoenixsec.rules.engine import RuleEngine
 
     cfg = ctx.obj["config"]
+
+    if not token:
+        err_console.print("[red]GITHUB_TOKEN environment variable is required for org scanning[/red]")
+        raise typer.Exit(code=1)
 
     # Validate severity option
     try:
@@ -1767,7 +1773,7 @@ def scan_org(
         raise typer.Exit(code=0)
 
 
-@app.command()
+@app.command(epilog="Examples:\n  phoenixsec init\n  phoenixsec init --non-interactive")
 def init(
     ctx: typer.Context,
     non_interactive: Annotated[
@@ -1940,7 +1946,7 @@ phoenixsec-scan:
     console.print("[green]✓ Successfully configured and saved config.yaml[/green]")
 
 
-@app.command()
+@app.command(epilog="Examples:\n  phoenixsec watch ./src --severity HIGH --interval 2.0")
 def watch(
     ctx: typer.Context,
     target: Annotated[
@@ -1958,6 +1964,14 @@ def watch(
             help="Minimum severity to alert: INFO | LOW | MEDIUM | HIGH | CRITICAL",
         ),
     ] = "LOW",
+    interval: Annotated[
+        float,
+        typer.Option(
+            "--interval",
+            "-i",
+            help="Polling interval in seconds.",
+        ),
+    ] = 1.5,
 ) -> None:
     """Watch a directory for file changes and scan modified files in real-time."""
     import time
@@ -2021,7 +2035,7 @@ def watch(
 
     try:
         while True:
-            time.sleep(1.5)
+            time.sleep(interval)
             current_files = get_watch_files()
 
             # Check for changes or additions
@@ -2080,7 +2094,7 @@ def watch(
 
 # ── lsp command ────────────────────────────────────────────────────────────────
 
-@app.command()
+@app.command(epilog="Examples:\n  phoenixsec lsp")
 def lsp(ctx: typer.Context) -> None:
     """Start the PhoenixSec Language Server Protocol (LSP) server.
     

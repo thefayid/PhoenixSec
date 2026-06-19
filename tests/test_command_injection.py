@@ -36,6 +36,11 @@ def java_first(code: str) -> Finding | None:
     return JavaCommandInjectionRule().scan(code, "Test.java")
 
 
+def js_findings(code: str) -> list[Finding]:
+    from phoenixsec.rules.command_injection import JavaScriptCommandInjectionRule
+    return JavaScriptCommandInjectionRule().scan_all(code, "test.js")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # _CmdSignals scoring unit tests
 # ══════════════════════════════════════════════════════════════════════════════
@@ -276,6 +281,24 @@ class TestJavaCommandInjectionRule:
         assert f.severity == Severity.CRITICAL
 
 
+class TestJavaScriptCommandInjectionRule:
+    def test_exec_concat_fires(self) -> None:
+        code = "const { exec } = require('child_process');\nexec('ping ' + req.query.host);\n"
+        findings = js_findings(code)
+        assert len(findings) >= 1
+        assert findings[0].rule_id == "JS-CMD-001"
+
+    def test_exec_template_literal_fires(self) -> None:
+        code = "const { execSync } = require('child_process');\nexecSync(`ping ${req.query.host}`);\n"
+        findings = js_findings(code)
+        assert len(findings) >= 1
+
+    def test_spawn_args_list_safe(self) -> None:
+        code = "const { spawn } = require('child_process');\nspawn('ping', [req.query.host]);\n"
+        findings = js_findings(code)
+        assert findings == []
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Rule registration & integration
 # ══════════════════════════════════════════════════════════════════════════════
@@ -293,3 +316,9 @@ class TestRuleRegistration:
 
         reg = RuleRegistry.global_instance()
         assert reg.is_registered("JAVA-CMD-001")
+
+    def test_js_cmd_rule_registered(self) -> None:
+        from phoenixsec.rules.registry import RuleRegistry
+
+        reg = RuleRegistry.global_instance()
+        assert reg.is_registered("JS-CMD-001")

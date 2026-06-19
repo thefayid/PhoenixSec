@@ -87,6 +87,7 @@ def test_scan_npm_audit(mock_run, mock_which, tmp_path):
     # Create package.json
     pkg_file = tmp_path / "package.json"
     pkg_file.write_text('{"dependencies": {"lodash": "<4.17.21"}}', encoding="utf-8")
+    (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
 
     # Mock subprocess.run
     mock_res = MagicMock()
@@ -105,3 +106,58 @@ def test_scan_npm_audit(mock_run, mock_which, tmp_path):
     assert "lodash" in f.code_snippet
     assert "Upgrade lodash to version 4.17.21." in f.recommendation
     assert f.file_path == str(pkg_file)
+
+
+@patch("shutil.which")
+@patch("subprocess.run")
+def test_scan_npm_audit_no_lockfile_skips(mock_run, mock_which, tmp_path):
+    mock_which.side_effect = lambda cmd: "/usr/bin/npm" if cmd == "npm" else None
+
+    # Create package.json but no lockfile
+    pkg_file = tmp_path / "package.json"
+    pkg_file.write_text('{"dependencies": {"lodash": "<4.17.21"}}', encoding="utf-8")
+
+    scanner = SCAScanner()
+    findings = scanner.scan(tmp_path)
+
+    assert len(findings) == 0
+    mock_run.assert_not_called()
+
+
+@patch("shutil.which")
+@patch("subprocess.run")
+def test_scan_python_pyproject(mock_run, mock_which, tmp_path):
+    mock_which.side_effect = lambda cmd: "/usr/bin/pip-audit" if cmd == "pip-audit" else None
+
+    # Create pyproject.toml
+    pyproject_file = tmp_path / "pyproject.toml"
+    pyproject_file.write_text(
+        "[project]\n"
+        'dependencies = ["flask==1.1.1"]\n',
+        encoding="utf-8"
+    )
+
+    # Mock subprocess.run
+    mock_res = MagicMock()
+    mock_res.stdout = MOCK_PIP_AUDIT_OUTPUT
+    mock_res.return_value = mock_res
+    mock_run.return_value = mock_res
+
+    scanner = SCAScanner()
+    findings = scanner.scan(tmp_path)
+
+    # Check that temporary file was written and then pip-audit was called with it
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.file_path == str(pyproject_file)
+    assert f.vulnerability_type == VulnerabilityType.DEPENDENCY_VULNERABILITY
+    assert "flask" in f.code_snippet
+    
+    # Assert pip-audit was called with requirements flag -r and the tmp filename
+    mock_run.assert_called_once()
+    called_args = mock_run.call_args[0][0]
+    assert "-r" in called_args
+    # The tmp file should have been cleaned up
+    tmp_files = list(tmp_path.glob(".tmp_req_*"))
+    assert len(tmp_files) == 0
+

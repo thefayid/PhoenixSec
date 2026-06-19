@@ -6,6 +6,7 @@
 
 **Scan · Block · Patch · Repeat — Automatically.**
 
+[![Build Status](https://github.com/thefayid/PhoenixSec/actions/workflows/security_scan.yml/badge.svg)](https://github.com/thefayid/PhoenixSec/actions/workflows/security_scan.yml)
 [![Security Pipeline](https://img.shields.io/badge/DevSecOps-Powered-blueviolet?style=for-the-badge&logo=shield)](https://github.com/phoenixsec)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue?style=for-the-badge&logo=python)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
@@ -64,12 +65,12 @@ PhoenixSec is built to handle complex security workflows with modern engineering
 * **Outcome:** A leaked key is neutralized before a malicious actor can even scrape it.
 
 ### ⚡ Real-Time "As-You-Type" Vibe-Guard
-* **What it does:** A lightning-fast, universally compatible Language Server Protocol (LSP) Server that integrates directly into *any* modern IDE (VS Code, Cursor, Neovim, Zed, JetBrains).
-* **Outcome:** Instead of waiting for a file save or a git commit, PhoenixSec scans your keystrokes in real-time. If an AI coding assistant (like GitHub Copilot) hallucinates insecure code, you get an instant security squiggly line milliseconds later.
+* **What it does:** A lightning-fast, universally compatible Language Server Protocol (LSP) Server that integrates directly into *any* modern IDE (VS Code, Cursor, Neovim, Zed, JetBrains) using the `phoenixsec-vscode` extension or stdio configurations.
+* **Outcome:** Instead of waiting for a file save or a git commit, PhoenixSec scans your keystrokes in real-time. Supports Python, Java, JavaScript, TypeScript, Terraform, HTML, Kotlin, Swift, Rust, and Scala. If an AI coding assistant (like GitHub Copilot) hallucinates insecure code, you get an instant security squiggly line milliseconds later.
 
 ### 🔗 Context-Aware Inter-Procedural Taint Analysis
-* **What it does:** Evaluates variable propagation across function boundaries, class constructors, and return values rather than just tracing within a single local scope.
-* **Outcome:** Traces dataflow accurately through complex call graphs to distinguish between truly tainted variables and safely sanitized code arguments.
+* **What it does:** Traces variable taint propagation across function and file boundaries using a static call graph and fixed-point iteration. Fully supports nested call expressions, multi-line arguments, and lambda/closure invocations.
+* **Outcome:** Traces dataflow accurately through complex call graphs and resolves circular dependencies to distinguish between truly tainted variables and safely sanitized arguments. Automatically maps findings to their correct vulnerability types and CWE IDs (e.g., CWE-89 for SQLi, CWE-78 for Command Injection, and CWE-22 for Path Traversal).
 
 ### 🏗️ Infrastructure as Code (IaC) Scanner
 * **What it does:** Expands coverage to cloud configuration scripts, scanning Dockerfiles and Terraform `.tf` configurations.
@@ -186,6 +187,11 @@ Create `.github/workflows/security.yml`:
 | **Go** | ✅ Parser | 🔜 AI | `.go` |
 | **PHP** | ✅ Parser | 🔜 AI | `.php` |
 | **Ruby** | ✅ Parser | 🔜 AI | `.rb` |
+| **HTML** | ✅ Parser | 🔜 AI | `.html` |
+| **Kotlin** | ✅ Parser | 🔜 AI | `.kt` |
+| **Swift** | ✅ Parser | 🔜 AI | `.swift` |
+| **Rust** | ✅ Parser | 🔜 AI | `.rs` |
+| **Scala** | ✅ Parser | 🔜 AI | `.scala` |
 
 ---
 
@@ -233,8 +239,9 @@ Create `.github/workflows/security.yml`:
 
 Copy the workflow below into `.github/workflows/security_scan.yml`. It:
 - Runs on every push and pull request
-- Blocks the pipeline on HIGH+ findings
-- Auto-generates a fix PR (requires `PHOENIXSEC_AI_KEY` secret)
+- Integrates Python code linting (`ruff`) and test suite validation (`pytest`)
+- Blocks the pipeline on linting/test failures or HIGH+ vulnerability findings
+- Auto-generates a fix PR (requires `PHOENIXSEC_AI_KEY` or `GEMINI_API_KEY` secret)
 - Uploads SARIF to the GitHub Security → Code Scanning tab
 
 ```yaml
@@ -252,6 +259,29 @@ permissions:
   security-events: write
 
 jobs:
+  lint:
+    name: "🧹 Lint & Format"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  unit-tests:
+    name: "🧪 Run Unit Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .[dev]
+      - run: pytest
+
   security-scan:
     name: "🔍 Security Scan"
     runs-on: ubuntu-latest
@@ -262,7 +292,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install PhoenixSec
-        run: pip install phoenixsec
+        run: pip install -e .
 
       - name: Run Security Scan
         env:
@@ -364,6 +394,18 @@ phoenixsec scan-org <org> [OPTIONS]
   --token          GitHub PAT for repository access
   --workers  -w    Number of parallel workers (default: 4)
   --max-repos      Maximum repositories to scan
+
+# Initialize configuration file interactively or non-interactively
+phoenixsec init [OPTIONS]
+  --non-interactive  Skip interactive prompts and use defaults
+
+# Watch a directory for file changes and scan modified files in real-time
+phoenixsec watch <target> [OPTIONS]
+  --severity  -s     Minimum severity to alert (INFO|LOW|MEDIUM|HIGH|CRITICAL)
+  --interval  -i     Polling interval in seconds (default: 1.5)
+
+# Start the Language Server Protocol (LSP) server
+phoenixsec lsp
 ```
 
 ---

@@ -248,11 +248,11 @@ def _build_finding_python(sink: _XSSSink, file_path: str) -> Finding:
             "templates auto-escape. Avoid `mark_safe()` / `Markup()` with "
             "unvalidated input. Use a Content Security Policy (CSP) header."
         ),
-        references=[
+        references=(
             "https://owasp.org/www-community/attacks/xss/",
             "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html",
             "https://cwe.mitre.org/data/definitions/79.html",
-        ],
+        ),
     )
 
 
@@ -274,11 +274,11 @@ def _build_finding_js(sink: _XSSSink, file_path: str) -> Finding:
             "sanitized HTML, or `encodeURIComponent` for URL contexts. "
             "Implement a strict Content Security Policy (CSP)."
         ),
-        references=[
+        references=(
             "https://owasp.org/www-community/attacks/xss/",
             "https://cheatsheetseries.owasp.org/cheatsheets/DOM_based_XSS_Prevention_Cheat_Sheet.html",
             "https://cwe.mitre.org/data/definitions/79.html",
-        ],
+        ),
     )
 
 

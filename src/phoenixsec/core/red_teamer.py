@@ -113,10 +113,10 @@ class AgenticRedTeamer:
         # Setup sandbox/temp directory
         temp_dir = file_path.parent / ".phoenix_sandbox"
         temp_dir.mkdir(exist_ok=True)
-        
+
         target_module_path = temp_dir / "target_module.py"
         test_file_path = temp_dir / "test_exploit.py"
-        
+
         try:
             target_module_path.write_text(code, encoding="utf-8")
             test_file_path.write_text(test_code, encoding="utf-8")

@@ -18,21 +18,29 @@ class SemgrepScanner:
 
     semgrep_not_installed = False
 
-    @staticmethod
-    def get_semgrep_bin() -> str:
-        """Find the semgrep binary path dynamically."""
+    _cached_semgrep_bin: str | None = None
+
+    @classmethod
+    def get_semgrep_bin(cls) -> str:
+        """Find the semgrep binary path dynamically and cache it."""
+        if cls._cached_semgrep_bin is not None:
+            return cls._cached_semgrep_bin
+
         prefix = Path(sys.prefix)
         for folder in ("Scripts", "bin"):
             for ext in ("", ".exe", ".cmd"):
                 candidate = prefix / folder / f"semgrep{ext}"
                 if candidate.is_file():
-                    return str(candidate)
+                    cls._cached_semgrep_bin = str(candidate)
+                    return cls._cached_semgrep_bin
 
         which_bin = shutil.which("semgrep")
         if which_bin:
-            return which_bin
+            cls._cached_semgrep_bin = which_bin
+            return cls._cached_semgrep_bin
 
-        return "semgrep"
+        cls._cached_semgrep_bin = "semgrep"
+        return cls._cached_semgrep_bin
 
     def scan(self, target_path: Path | str) -> list[Finding]:
         """Run Semgrep scan on the target path and return findings.
@@ -67,7 +75,7 @@ class SemgrepScanner:
         rules_path = Path(__file__).parent.parent / "rules" / "semgrep_rules.yaml"
 
         if not rules_path.is_file():
-            log.warning(f"Semgrep rules config not found at {rules_path}. Skipping Semgrep scan.")
+            log.warning(f"Semgrep rules file not found — create one at {rules_path} or install PhoenixSec properly")
             return []
 
         cmd = [
@@ -213,10 +221,27 @@ class SemgrepScanner:
                     close_lines = abs(int_f.line_number - sem_f.line_number) <= 10
 
                 if same_file and same_type and close_lines:
-                    # Match found! Deduplicate and boost confidence
-                    boosted_score = min(
-                        1.0, max(int_f.confidence_score, sem_f.confidence_score) + 0.20
-                    )
+                    # Match found! Deduplicate and check if we should boost confidence
+                    same_cwe = False
+                    if int_f.cwe_id and sem_f.cwe_id:
+                        same_cwe = int_f.cwe_id.strip().upper() == sem_f.cwe_id.strip().upper()
+
+                    # Extract rule family from rule_id
+                    def get_rule_family(rule_id: str) -> str:
+                        rid = rule_id.upper()
+                        for fam in ("SQLI", "CMD", "SECRET", "XSS", "SSRF", "PT", "DESER", "CRYPTO", "XXE", "NOSQL", "CONFIG"):
+                            if fam in rid:
+                                return fam
+                        return rid
+
+                    same_family = get_rule_family(int_f.rule_id) == get_rule_family(sem_f.rule_id)
+
+                    if same_cwe or same_family:
+                        boosted_score = min(
+                            1.0, max(int_f.confidence_score, sem_f.confidence_score) + 0.20
+                        )
+                    else:
+                        boosted_score = max(int_f.confidence_score, sem_f.confidence_score)
 
                     # Update rule_id to show verification from both scanners
                     combined_rule_id = f"{int_f.rule_id} + {sem_f.rule_id}"
@@ -229,7 +254,7 @@ class SemgrepScanner:
                     )
 
                     log.debug(
-                        f"Deduplicated and boosted finding: {int_f.vulnerability_type} "
+                        f"Deduplicated finding: {int_f.vulnerability_type} "
                         f"at {int_f.location} -> new confidence {boosted_score * 100}%"
                     )
                     matched = True

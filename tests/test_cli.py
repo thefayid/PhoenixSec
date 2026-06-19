@@ -181,8 +181,10 @@ def test_cli_report_command(tmp_path: Path) -> None:
 
 
 @patch("phoenixsec.core.github_automation.GitHubPRAutomation.create_pull_request")
-def test_cli_scan_with_patch_option(mock_create_pr: MagicMock, tmp_path: Path) -> None:
+def test_cli_scan_with_patch_option(mock_create_pr: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The scan command with --patch option should patch file and open a PR."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test_gemini_key")
+    monkeypatch.setenv("PHOENIXSEC__PATCHING__REQUIRE_HUMAN_APPROVAL", "false")
     target = tmp_path / "vuln.py"
     target.write_text(
         "def query(request):\n"
@@ -231,3 +233,35 @@ def test_cli_scan_changed_files(tmp_path: Path) -> None:
     result_clean = runner.invoke(app, ["scan", str(tmp_path), "--changed-files"])
     assert result_clean.exit_code == 0
     assert "No changed files detected in Git" in result_clean.stdout
+
+def test_cli_watch_command_discovers_changes(tmp_path: Path) -> None:
+    """The watch command should detect added/modified files and scan them."""
+    # Create target directory
+    target_dir = tmp_path / "src"
+    target_dir.mkdir()
+
+    # Create initial file
+    app_file = target_dir / "app.py"
+    app_file.write_text("print('hello')", encoding="utf-8")
+
+    sleep_count = 0
+
+    def mock_sleep(interval: float) -> None:
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count == 1:
+            # First loop iteration: simulate adding a vulnerable file
+            vuln_file = target_dir / "vuln.py"
+            vuln_file.write_text("cursor.execute('SELECT * FROM t WHERE id=' + uid)\n", encoding="utf-8")
+        elif sleep_count == 2:
+            # Second loop iteration: exit loop
+            raise KeyboardInterrupt()
+
+    with patch("time.sleep", side_effect=mock_sleep):
+        result = runner.invoke(app, ["watch", str(target_dir), "--interval", "0.1"])
+
+    assert result.exit_code == 0
+    assert "Watcher Active" in result.stdout
+    assert "File added: vuln.py" in result.stdout
+    assert "vulnerabilities found in vuln.py" in result.stdout
+    assert "Watcher stopped" in result.stdout

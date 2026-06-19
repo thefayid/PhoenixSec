@@ -116,3 +116,109 @@ def test_merge_unmatched_findings() -> None:
     assert len(merged) == 2
     assert merged[0].rule_id == "PY-SQLI-001"
     assert merged[1].rule_id == "SEMGREP-SQLI"
+
+
+def test_merge_and_deduplicate_matching_cwe_boosts_confidence() -> None:
+    scanner = SemgrepScanner()
+    file_path = str(Path("samples/vulnerable_files/sqli.py").resolve())
+
+    # Same CWE but different rule ID strings
+    int_f = Finding(
+        vulnerability_type=VulnerabilityType.SQL_INJECTION,
+        severity=Severity.CRITICAL,
+        confidence_score=0.70,
+        recommendation="Use parameterized queries.",
+        file_path=file_path,
+        line_number=15,
+        rule_id="RULE-A",
+        cwe_id="CWE-89",
+    )
+
+    sem_f = Finding(
+        vulnerability_type=VulnerabilityType.SQL_INJECTION,
+        severity=Severity.CRITICAL,
+        confidence_score=0.60,
+        recommendation="Verify inputs.",
+        file_path=file_path,
+        line_number=15,
+        rule_id="RULE-B",
+        cwe_id="CWE-89",
+    )
+
+    merged = scanner.merge_and_deduplicate([int_f], [sem_f])
+    assert len(merged) == 1
+    # 0.70 + 0.20 = 0.90
+    assert abs(merged[0].confidence_score - 0.90) < 0.001
+
+
+def test_merge_and_deduplicate_different_family_and_cwe_no_boost() -> None:
+    scanner = SemgrepScanner()
+    file_path = str(Path("samples/vulnerable_files/sqli.py").resolve())
+
+    # Different CWEs and different rule ID strings
+    int_f = Finding(
+        vulnerability_type=VulnerabilityType.SQL_INJECTION,
+        severity=Severity.CRITICAL,
+        confidence_score=0.70,
+        recommendation="Use parameterized queries.",
+        file_path=file_path,
+        line_number=15,
+        rule_id="RULE-A",
+        cwe_id="CWE-89",
+    )
+
+    sem_f = Finding(
+        vulnerability_type=VulnerabilityType.SQL_INJECTION,
+        severity=Severity.CRITICAL,
+        confidence_score=0.60,
+        recommendation="Verify inputs.",
+        file_path=file_path,
+        line_number=15,
+        rule_id="RULE-B",
+        cwe_id="CWE-999",
+    )
+
+    merged = scanner.merge_and_deduplicate([int_f], [sem_f])
+    assert len(merged) == 1
+    # No boost -> max(0.70, 0.60) = 0.70
+    assert merged[0].confidence_score == 0.70
+
+
+def test_semgrep_bin_caching(monkeypatch) -> None:
+    # Clear cache first
+    SemgrepScanner._cached_semgrep_bin = None
+    
+    import pathlib
+    original_is_file = pathlib.Path.is_file
+    
+    def mock_is_file(self):
+        if "semgrep" in self.name:
+            return False
+        return original_is_file(self)
+        
+    monkeypatch.setattr(pathlib.Path, "is_file", mock_is_file)
+    
+    import shutil
+    call_count = 0
+    original_which = shutil.which
+    
+    def mock_which(cmd):
+        nonlocal call_count
+        if cmd == "semgrep":
+            call_count += 1
+            return "/path/to/mocked/semgrep"
+        return original_which(cmd)
+        
+    monkeypatch.setattr(shutil, "which", mock_which)
+    
+    scanner = SemgrepScanner()
+    # First call
+    path1 = scanner.get_semgrep_bin()
+    assert path1 == "/path/to/mocked/semgrep"
+    assert call_count == 1
+    
+    # Second call - should return cached and not call shutil.which again
+    path2 = scanner.get_semgrep_bin()
+    assert path2 == "/path/to/mocked/semgrep"
+    assert call_count == 1
+

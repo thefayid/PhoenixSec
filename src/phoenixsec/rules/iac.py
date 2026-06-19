@@ -11,7 +11,6 @@ from phoenixsec.models.vulnerability import Severity
 from phoenixsec.rules.base_rule import BaseRule
 from phoenixsec.rules.registry import rule
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Dockerfile Rules
 # ══════════════════════════════════════════════════════════════════════════════
@@ -69,7 +68,7 @@ class DockerfileUnpinnedTagRule(BaseRule):
                 if "@" in image_spec:
                     # Pinned via digest, safe
                     continue
-                
+
                 parts = image_spec.split(":")
                 if len(parts) == 1 or parts[1].lower() == "latest":
                     findings.append(
@@ -258,7 +257,7 @@ class TerraformOpenIngressRule(BaseRule):
             return findings
 
         lines = code.splitlines()
-        
+
         # We slide a window over lines to associate cidr_blocks and port assignments within blocks.
         # Simple window tracking:
         for idx in range(len(lines)):
@@ -267,7 +266,7 @@ class TerraformOpenIngressRule(BaseRule):
                 # Look 5 lines up and 5 lines down for sensitive port assignments
                 start_win = max(0, idx - 5)
                 end_win = min(len(lines), idx + 6)
-                
+
                 has_sensitive_port = False
                 port_desc = ""
                 for j in range(start_win, end_win):

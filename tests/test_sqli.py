@@ -439,6 +439,29 @@ class TestPythonSQLiRule:
         line_numbers = [f.line_number for f in findings]
         assert len(line_numbers) == len(set(line_numbers))
 
+    def test_sqli_backtracking_far_declaration(self) -> None:
+        lines = [
+            'query = "SELECT * FROM users WHERE name = " + username',
+        ]
+        for i in range(25):
+            lines.append(f"x_{i} = {i}")
+        lines.append("cursor.execute(query)")
+        code = "\n".join(lines)
+        findings = py_findings(code)
+        assert len(findings) == 1
+        assert findings[0].rule_id == "PY-SQLI-001"
+
+    def test_sqli_configurable_window_size(self, monkeypatch) -> None:
+        class MockConfig:
+            class Scanning:
+                sqli_window_size = 2
+            scanning = Scanning()
+        
+        import phoenixsec.rules.sqli
+        monkeypatch.setattr(phoenixsec.rules.sqli, "load_config", lambda: MockConfig())
+        
+        assert _ANALYZER.CONTEXT_WINDOW == 2
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # JavaSQLiRule integration tests

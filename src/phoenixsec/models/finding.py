@@ -263,8 +263,8 @@ class Finding:
             )
         if not (0.0 <= self.confidence_score <= 1.0):
             raise ValueError(f"confidence_score must be in [0.0, 1.0], got {self.confidence_score}")
-        if self.line_number is not None and self.line_number < 1:
-            raise ValueError(f"line_number must be >= 1, got {self.line_number}")
+        if self.line_number is not None and self.line_number < 0:
+            raise ValueError(f"line_number must be >= 0, got {self.line_number}")
 
     # ── Derived properties ─────────────────────────────────────────────────────
 
@@ -318,6 +318,11 @@ class Finding:
         """
         from phoenixsec.core.compliance import get_compliance_mappings
 
+        try:
+            compliance = get_compliance_mappings(self.cwe_id)
+        except Exception:
+            compliance = {}
+
         return {
             "id": self.id,
             "vulnerability_type": str(self.vulnerability_type),
@@ -337,7 +342,7 @@ class Finding:
             "code_snippet": self.code_snippet,
             "cwe_id": self.cwe_id,
             "references": list(self.references),
-            "compliance": get_compliance_mappings(self.cwe_id),
+            "compliance": compliance,
             "detected_at": self.detected_at.isoformat(),
         }
 
@@ -391,8 +396,8 @@ class Finding:
         if not isinstance(other, Finding):
             return NotImplemented
         if self.severity != other.severity:
-            return self.severity > other.severity  # reversed: higher = earlier
-        return self.confidence_score > other.confidence_score  # reversed
+            return self.severity > other.severity  # reversed: higher severity = earlier
+        return self.confidence_score > other.confidence_score  # reversed: higher confidence = earlier
 
     # ── String representation ──────────────────────────────────────────────────
 

@@ -93,6 +93,10 @@ class ScanningConfig(BaseModel):
         default_factory=dict,
         description="Rule ID severity overrides, e.g. PY-SQLI-001: CRITICAL",
     )
+    sqli_window_size: int = Field(
+        default=12,
+        description="Window size for SQLi sliding-window context scanning.",
+    )
 
     @field_validator("min_severity")
     @classmethod
@@ -164,6 +168,10 @@ class PatchingConfig(BaseModel):
     model: str = Field(
         default="gemini-1.5-flash",
         description="AI model name to request for patches.",
+    )
+    require_human_approval: bool = Field(
+        default=True,
+        description="Require interactive/human confirmation before applying patches.",
     )
 
 
@@ -274,8 +282,8 @@ def load_config(config_path: Path | None = None) -> PhoenixSecConfig:
         If the YAML file cannot be parsed or Pydantic validation fails.
     """
     # Resolve the config file path
+    env_path = os.getenv("PHOENIXSEC_CONFIG")
     if config_path is None:
-        env_path = os.getenv("PHOENIXSEC_CONFIG")
         config_path = Path(env_path) if env_path else Path("config.yaml")
 
     yaml_overrides: dict = {}
@@ -290,6 +298,13 @@ def load_config(config_path: Path | None = None) -> PhoenixSecConfig:
                 f"Failed to parse configuration file: {config_path}",
                 context={"path": str(config_path), "error": str(exc)},
             ) from exc
+    else:
+        from phoenixsec.core.logger import get_logger
+        log = get_logger(__name__)
+        if env_path and str(config_path) == env_path:
+            log.warning(f"PHOENIXSEC_CONFIG set to {env_path} but file does not exist. Using built-in defaults.")
+        elif not env_path and str(config_path) == "config.yaml":
+            log.info("No config.yaml found, using built-in defaults.")
 
     try:
         return PhoenixSecConfig(**yaml_overrides)

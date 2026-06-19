@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from phoenixsec.core.logger import get_logger
 from phoenixsec.models.finding import Finding
+from phoenixsec.utils.parser import FileParser
 
 if TYPE_CHECKING:
     from phoenixsec.rules.base_rule import BaseRule
@@ -114,12 +115,11 @@ class Scanner:
             language = "java"
         else:
             # Fallback check against parser registry or default
-            from phoenixsec.utils.parser import FileParser
-
             try:
                 lang_info = FileParser().detect_language(file_path)
                 language = lang_info.name.lower()
             except Exception:
+                log.warning(f"Could not determine language for {file_path}, defaulting to python rules")
                 language = "python"  # Default fallback
 
         findings: list[Finding] = []

@@ -153,6 +153,13 @@ class TestHardcodedSecretsRule:
         code = "query = f\"SELECT * FROM users WHERE username='{username}' AND password='{password}'\"\n"
         assert scan_findings(code) == []
 
+    def test_fstring_with_secret_is_not_ignored(self) -> None:
+        code = "my_api_key = f\"sk-1234567890abcdef1234567890 and context {val1} and {val2}\"\n"
+        findings = scan_findings(code)
+        assert len(findings) == 1
+        assert "sk-1234567890abcdef1234567890" in findings[0].code_snippet
+
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Rule registration & integration

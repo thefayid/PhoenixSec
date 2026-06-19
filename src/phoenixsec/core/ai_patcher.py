@@ -27,6 +27,12 @@ class AIPatcher:
         self._rule_engine = rule_engine or RuleEngine()
         from phoenixsec.core.config import load_config
         self._config = config or load_config()
+        if self._config.patching.provider.lower() == "gemini":
+            api_key = os.environ.get("PHOENIXSEC_AI_KEY") or os.environ.get("GEMINI_API_KEY")
+            if not api_key:
+                raise PhoenixSecError(
+                    "Gemini API key not found. Set GEMINI_API_KEY or change patching.provider to 'ollama'"
+                )
 
     def _find_venv_bin(self, bin_name: str) -> Path | None:
         """Find executable dynamically in venv folders or current Python prefix."""
@@ -52,8 +58,14 @@ class AIPatcher:
     def _query_ollama(self, prompt: str) -> str:
         """Query the local Ollama API to generate a patch."""
         url = f"{self._config.patching.ollama_url}/api/generate"
+        model = self._config.patching.model or "qwen2.5-coder"
+        if "gemini" in model.lower():
+            raise PhoenixSecError(
+                "Gemini models are not supported with the Ollama provider. "
+                "Please configure a valid Ollama model or set the provider to 'gemini'."
+            )
         payload = {
-            "model": self._config.patching.model if self._config.patching.model and "gemini" not in self._config.patching.model else "qwen2.5-coder",
+            "model": model,
             "prompt": prompt,
             "stream": False,
         }
@@ -67,7 +79,7 @@ class AIPatcher:
                 text = res_data.get("response", "")
                 if not text:
                     raise PhoenixSecError("Ollama API returned empty response.")
-                
+
                 # Extract code if wrapped in markdown fences
                 match = re.search(r"```(?:[a-zA-Z]+)?\n(.*?)```", text, re.DOTALL)
                 if match:
@@ -565,9 +577,10 @@ class AIPatcher:
             import sys
             if not auto_confirm and sys.stdin.isatty():
                 import difflib
+
                 import typer
-                from rich.syntax import Syntax
                 from rich.console import Console
+                from rich.syntax import Syntax
 
                 console = Console()
                 diff_lines = list(difflib.unified_diff(
@@ -586,10 +599,20 @@ class AIPatcher:
                     try:
                         if not typer.confirm("Apply this patch?"):
                             console.print(f"[yellow]Patch for {file_path.name} declined by user.[/yellow]")
+                            file_path.write_text(original_code, encoding="utf-8")
                             return False, original_code, False
                     except typer.Abort:
                         console.print(f"\n[yellow]Patch for {file_path.name} declined by user.[/yellow]")
+                        file_path.write_text(original_code, encoding="utf-8")
                         return False, original_code, False
+            elif not auto_confirm:
+                if self._config.patching.require_human_approval:
+                    log.warning(
+                        f"Skipping patch for {file_path.name}: "
+                        "require_human_approval is enabled, but running in non-interactive mode."
+                    )
+                    file_path.write_text(original_code, encoding="utf-8")
+                    return False, original_code, False
 
             # Successfully confirmed or auto_confirmed, write to file path!
             file_path.write_text(patched_code, encoding="utf-8")

@@ -46,8 +46,8 @@ import phoenixsec.rules.ast_rules  # noqa: F401 — AST-level Python analysis
 import phoenixsec.rules.broken_auth  # noqa: F401
 import phoenixsec.rules.command_injection  # noqa: F401
 import phoenixsec.rules.csrf  # noqa: F401
-import phoenixsec.rules.insecure_deserialization  # noqa: F401
 import phoenixsec.rules.iac  # noqa: F401
+import phoenixsec.rules.insecure_deserialization  # noqa: F401
 import phoenixsec.rules.ldap_injection  # noqa: F401
 import phoenixsec.rules.misconfiguration  # noqa: F401
 import phoenixsec.rules.nosql_injection  # noqa: F401
@@ -133,6 +133,12 @@ class EngineResult:
             f"EngineResult({self.file_path} | {self.language} | "
             f"{status} | {self.rules_run} rules | {self.duration_seconds:.3f}s)"
         )
+
+    def __lt__(self, other: object) -> bool:
+        """Sort EngineResult objects by file path."""
+        if not isinstance(other, EngineResult):
+            return NotImplemented
+        return self.file_path < other.file_path
 
 
 # ── RuleEngine ─────────────────────────────────────────────────────────────────
@@ -402,7 +408,15 @@ class RuleEngine:
                     code = self._parser.read_file(file_path)
                     taint_findings = taint_analyzer.trace_file_calls(file_path, code)
                     if taint_findings:
-                        result.findings.extend(taint_findings)
+                        existing_keys = {
+                            (f.rule_id, f.line_number, f.file_path)
+                            for f in result.findings
+                        }
+                        for tf in taint_findings:
+                            key = (tf.rule_id, tf.line_number, tf.file_path)
+                            if key not in existing_keys:
+                                result.findings.append(tf)
+                                existing_keys.add(key)
                         result.findings.sort()
                 except Exception as e:
                     log.warning(f"Failed to run cross-file taint trace on {file_path}: {e}")
@@ -438,6 +452,7 @@ class RuleEngine:
                         )
                     )
 
+        results.sort()
         log.info(
             "RuleEngine.scan_directory: complete",
             directory=str(root),

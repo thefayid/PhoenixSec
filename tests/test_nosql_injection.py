@@ -27,3 +27,20 @@ def test_nosql_injection_javascript():
     findings = rule.scan_context(ctx)
     assert len(findings) == 1
     assert findings[0].rule_id == "PSEC-NOSQL-JS-001"
+
+
+def test_nosql_injection_regex_python():
+    from phoenixsec.rules.base_rule import RuleContext
+    from phoenixsec.rules.nosql_injection import PythonNoSQLInjectionRule
+
+    rule = PythonNoSQLInjectionRule()
+    vuln_code = """
+    user_input = request.args.get("pattern")
+    query = {"username": {"$regex": user_input}}
+    db.users.find(query)
+    """
+    ctx = RuleContext.from_code(vuln_code, "test.py", "python")
+    findings = rule.scan_context(ctx)
+    assert len(findings) == 1
+    assert findings[0].rule_id == "PSEC-NOSQL-PY-001"
+

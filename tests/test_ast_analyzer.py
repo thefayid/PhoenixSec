@@ -28,6 +28,7 @@ cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")
         assert len(sqli) >= 1
         assert sqli[0].rule_id == "AST-PY-SQLI-001"
         assert sqli[0].severity == Severity.CRITICAL
+        assert sqli[0].confidence_score == 0.95
 
     def test_string_concat_sqli_detected(self):
         src = """
@@ -110,6 +111,7 @@ subprocess.run(user_cmd, shell=True)
         cmdi = [f for f in findings if f.vulnerability_type == VulnerabilityType.COMMAND_INJECTION]
         assert len(cmdi) >= 1
         assert cmdi[0].severity == Severity.CRITICAL
+        assert cmdi[0].confidence_score == 0.90
 
     def test_subprocess_run_no_shell_is_high_not_critical(self):
         src = """

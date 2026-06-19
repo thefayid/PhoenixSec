@@ -67,6 +67,13 @@ _JAVA_SINK_RE = re.compile(
     r"\b(?:Runtime\s*\.\s*getRuntime\s*\(\s*\)\s*\.\s*exec|new\s+ProcessBuilder|ProcessBuilder)\b",
 )
 
+# ── JavaScript sinks ──────────────────────────────────────────────────────────
+_JS_SINK_RE = re.compile(
+    r"\b(?:exec|spawn|execSync|execFile|spawnSync|execFileSync)\s*\(",
+    re.IGNORECASE,
+)
+_JS_TEMPLATE_LITERAL_RE = re.compile(r"`[^`]*\$\{[^}]+\}[^`]*`")
+
 # ── Python shell=True / shell=False ──────────────────────────────────────────
 _PY_SHELL_TRUE_RE = re.compile(r"\bshell\s*=\s*True\b")
 _PY_SHELL_FALSE_RE = re.compile(r"\bshell\s*=\s*False\b")
@@ -323,6 +330,8 @@ class _CmdInjectionAnalyzer:
             pattern = _PY_SINK_RE
         elif lang == "java":
             pattern = _JAVA_SINK_RE
+        elif lang in ("javascript", "typescript"):
+            pattern = _JS_SINK_RE
         elif lang == "go":
             pattern = _GO_SINK_RE
         elif lang == "php":
@@ -365,6 +374,13 @@ class _CmdInjectionAnalyzer:
                 signals.has_java_multi_arg = True
             else:
                 signals.has_java_single_str_exec = True
+        elif lang in ("javascript", "typescript"):
+            if re.search(r"\bexec(?:Sync|FileSync)?\b", window_text):
+                signals.has_implicit_shell = True
+            if re.search(r"\bspawn(?:Sync)?\b.*?,.*?\[", window_text, re.DOTALL) or "shell: false" in window_text:
+                signals.has_java_multi_arg = True
+            else:
+                signals.has_java_single_str_exec = True
         elif lang == "go":
             if _GO_MULTI_ARG_RE.search(window_text):
                 if _SHELL_KEYWORDS_RE.search(window_text) and (
@@ -395,7 +411,7 @@ class _CmdInjectionAnalyzer:
     @staticmethod
     def _detect_concat_all(window_text: str, signals: _CmdSignals, lang: str) -> None:
         """Populate string-building signals from the window text."""
-        if lang in ("python", "java", "go"):
+        if lang in ("python", "java", "go", "javascript", "typescript"):
             for match in _STR_PLUS_VAR_RE.finditer(window_text):
                 captured = match.group(1) or match.group(2)
                 if captured:
@@ -414,6 +430,11 @@ class _CmdInjectionAnalyzer:
 
             if _PY_FORMAT_CALL_RE.search(window_text):
                 signals.has_format_call = True
+
+        elif lang in ("javascript", "typescript"):
+            for match in _JS_TEMPLATE_LITERAL_RE.finditer(window_text):
+                signals.has_fstring_interp = True
+                signals.concat_snippets.append(match.group(0))
 
         elif lang == "go":
             for match in _GO_FORMAT_CALL_RE.finditer(window_text):
@@ -446,7 +467,7 @@ class _CmdInjectionAnalyzer:
             or stripped.startswith("*")
         ):
             return True
-        if lang in ("java", "go") and (
+        if lang in ("java", "go", "javascript", "typescript") and (
             stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*")
         ):
             return True
@@ -767,6 +788,89 @@ class PhpCommandInjectionRule(BaseRule):
 
             signals = _ANALYZER.analyze_window(lines, sink_idx, "php")
             score = signals.compute_score()
+
+            if score >= _ANALYZER.SCORE_THRESHOLD:
+                seen_lines.add(sink_idx)
+                findings.append(
+                    self._make_finding(
+                        file_path,
+                        line_number=signals.sink_line_number,
+                        snippet=signals.sink_expression(),
+                        source=signals.best_source(),
+                        sink=signals.sink_expression(),
+                        confidence=score,
+                    )
+                )
+
+        return findings
+
+
+@rule
+class JavaScriptCommandInjectionRule(BaseRule):
+    """Detect command injection in JavaScript/Node.js source code.
+
+    Analyses Node.js child_process sinks like exec, spawn, execSync, etc.
+    """
+
+    rule_id = "JS-CMD-001"
+    name = "JavaScript OS Command Injection"
+    description = (
+        "Detected dynamic OS command execution using string concatenation or template literals "
+        "in a child_process sink. Passing unsanitized user inputs directly to child_process.exec "
+        "or spawn with shell: true allows attackers to run arbitrary OS commands."
+    )
+    severity = Severity.CRITICAL
+    category = VulnerabilityType.COMMAND_INJECTION
+    languages = ["javascript", "typescript"]
+    confidence = 0.75
+    cwe_id = "CWE-78"
+    references = (
+        "https://owasp.org/www-community/attacks/Command_Injection",
+        "https://cwe.mitre.org/data/definitions/78.html",
+        "https://nodejs.org/api/child_process.html",
+    )
+
+    def _recommendation(self) -> str:
+        return (
+            "Avoid executing shell commands. If execution is necessary, "
+            "use spawn or execFile with an arguments array rather than exec with "
+            "string concatenation, and avoid setting shell: true. "
+            "Sanitize all inputs before execution."
+        )
+
+    def scan(self, code: str, file_path: str) -> Finding | None:
+        findings = self._detect_all(code, file_path)
+        return findings[0] if findings else None
+
+    def scan_all(self, code: str, file_path: str) -> list[Finding]:
+        return self._detect_all(code, file_path)
+
+    def _detect_all(self, code: str, file_path: str) -> list[Finding]:
+        if not code.strip():
+            return []
+
+        lines = code.splitlines()
+        sink_indices = _ANALYZER.find_sink_indices(lines, "javascript")
+
+        findings: list[Finding] = []
+        seen_lines: set[int] = set()
+
+        for sink_idx in sink_indices:
+            if sink_idx in seen_lines:
+                continue
+            if _ANALYZER.is_comment_or_blank(lines[sink_idx], "javascript"):
+                continue
+
+            signals = _ANALYZER.analyze_window(lines, sink_idx, "javascript")
+            score = signals.compute_score()
+
+            log.debug(
+                "JavaScriptCommandInjectionRule: window scored",
+                file=file_path,
+                line=signals.sink_line_number,
+                score=round(score, 2),
+                has_concat=signals.has_any_concat,
+            )
 
             if score >= _ANALYZER.SCORE_THRESHOLD:
                 seen_lines.add(sink_idx)

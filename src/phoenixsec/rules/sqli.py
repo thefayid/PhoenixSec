@@ -53,6 +53,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from phoenixsec.core.config import load_config
 from phoenixsec.core.logger import get_logger
 from phoenixsec.models.finding import Finding, VulnerabilityType
 from phoenixsec.models.vulnerability import Severity
@@ -369,8 +370,16 @@ class _SQLiAnalyzer:
     """
 
     SCORE_THRESHOLD: float = 0.50
-    CONTEXT_WINDOW: int = 10  # lines above the sink
     LOOK_AHEAD: int = 3  # lines below the sink (multiline calls)
+
+    @property
+    def CONTEXT_WINDOW(self) -> int:
+        """Dynamic context window size loaded from configuration (defaulting to 12)."""
+        try:
+            cfg = load_config()
+            return cfg.scanning.sqli_window_size
+        except Exception:
+            return 12
 
     # ── Sink discovery ─────────────────────────────────────────────────────────
 
@@ -401,6 +410,93 @@ class _SQLiAnalyzer:
         else:
             return []
         return [i for i, line in enumerate(lines) if pattern.search(line)]
+
+    # ── Backtracking ────────────────────────────────────────────────────────────
+
+    def _backtrack_variables(
+        self,
+        lines: list[str],
+        sink_idx: int,
+        window_start: int,
+        language: str,
+    ) -> list[str]:
+        """Track query variables backwards to collect defining lines before the window."""
+        sink_line = lines[sink_idx]
+        lang = language.lower()
+
+        # Extract the variable name passed as the first argument to execute/query
+        var_name = None
+        if lang == "python":
+            m = re.search(r"\bexecute(?:many)?\s*\(\s*([a-zA-Z_]\w*)", sink_line, re.IGNORECASE)
+            if m:
+                var_name = m.group(1)
+        elif lang == "java":
+            m = re.search(
+                r"\b(?:executeQuery|executeUpdate|executeLargeUpdate|execute)\s*\(\s*([a-zA-Z_]\w*)",
+                sink_line,
+                re.IGNORECASE,
+            )
+            if m:
+                var_name = m.group(1)
+        elif lang == "go":
+            m = re.search(
+                r"\b(?:Query|QueryRow|Exec|Select|Get)(?:Context)?\s*\(\s*(?:[^,)]+,\s*)?([a-zA-Z_]\w*)",
+                sink_line,
+                re.IGNORECASE,
+            )
+            if m:
+                var_name = m.group(1)
+        elif lang == "php":
+            m = re.search(
+                r"\b(?:query|exec|prepare)\s*\(\s*([a-zA-Z_]\w*)",
+                sink_line,
+                re.IGNORECASE,
+            )
+            if m:
+                var_name = m.group(1)
+
+        if not var_name:
+            return []
+
+        tracked_vars = {var_name}
+        backtrack_lines: list[str] = []
+
+        # Iterate backwards from sink_idx - 1 to 0 (cap at 150 lines backwards)
+        limit = max(0, sink_idx - 150)
+        for i in range(sink_idx - 1, limit - 1, -1):
+            line = lines[i]
+            stripped = line.strip()
+            if (
+                not stripped
+                or stripped.startswith("#")
+                or stripped.startswith("//")
+                or stripped.startswith("*")
+            ):
+                continue
+
+            for var in list(tracked_vars):
+                # Match "var = ..." or "var += ..."
+                assign_pattern = re.compile(
+                    r"\b" + re.escape(var) + r"\s*(\+?=)\s*(.*)"
+                )
+                m = assign_pattern.search(line)
+                if m:
+                    if i < window_start:
+                        backtrack_lines.append(line)
+
+                    # Extract any other variable references in the RHS
+                    rhs = m.group(2)
+                    words = re.findall(r"\b([a-zA-Z_]\w*)\b", rhs)
+                    for word in words:
+                        if word not in {
+                            "None", "True", "False", "self", "this", "str", "String",
+                            "SELECT", "INSERT", "UPDATE", "DELETE"
+                        }:
+                            tracked_vars.add(word)
+                    break
+
+        backtrack_lines.reverse()
+        return backtrack_lines
 
     # ── Context window analysis ────────────────────────────────────────────────
 
@@ -435,7 +531,11 @@ class _SQLiAnalyzer:
         """
         window_start = max(0, sink_idx - self.CONTEXT_WINDOW)
         window_end = min(len(lines), sink_idx + self.LOOK_AHEAD + 1)
-        window_lines = lines[window_start:window_end]
+
+        # Track variables backwards to get definitions outside the window
+        backtrack_lines = self._backtrack_variables(lines, sink_idx, window_start, language)
+
+        window_lines = backtrack_lines + lines[window_start:window_end]
         window_text = "\n".join(window_lines)
         sink_line = lines[sink_idx]
 

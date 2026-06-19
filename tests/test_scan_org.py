@@ -12,6 +12,7 @@ The new scan-org implementation uses:
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -20,6 +21,7 @@ from typer.testing import CliRunner
 
 from phoenixsec.cli.main import app
 
+os.environ["GITHUB_TOKEN"] = "mock-token"
 runner = CliRunner()
 
 

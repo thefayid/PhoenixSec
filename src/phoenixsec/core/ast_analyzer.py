@@ -809,10 +809,19 @@ class ASTAnalyzer:
         findings = []
         for af in deduplicated:
             snippet = source_lines[af.line - 1].strip() if 0 < af.line <= len(source_lines) else ""
+
+            # Dynamic confidence score based on rule ID / type or severity
+            if af.rule_id == "AST-PY-SQLI-001":
+                confidence = 0.95
+            elif af.severity == Severity.CRITICAL:
+                confidence = 0.90
+            else:
+                confidence = 0.85
+
             f = Finding(
                 vulnerability_type=af.vulnerability_type,
                 severity=af.severity,
-                confidence_score=0.85,  # AST analysis is highly reliable
+                confidence_score=confidence,
                 recommendation=RECOMMENDATIONS.get(
                     af.rule_id,
                     f"Review the {af.vulnerability_type} vulnerability at line {af.line}.",

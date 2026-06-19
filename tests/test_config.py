@@ -127,3 +127,19 @@ class TestLoadConfig:
         config_file.write_text("")
         cfg = load_config(config_path=config_file)
         assert cfg.logging.level == "INFO"
+
+    def test_env_var_override(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """Environment variables PHOENIXSEC__* should override YAML/default configuration."""
+        monkeypatch.setenv("PHOENIXSEC__LOGGING__LEVEL", "DEBUG")
+        monkeypatch.setenv("PHOENIXSEC__SCANNING__MIN_SEVERITY", "HIGH")
+        cfg = load_config(config_path=tmp_path / "nonexistent.yaml")
+        assert cfg.logging.level == "DEBUG"
+        assert cfg.scanning.min_severity == "HIGH"
+
+    def test_config_path_from_env_var(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """The configuration path can be specified using PHOENIXSEC_CONFIG env variable."""
+        config_file = tmp_path / "custom_config.yaml"
+        config_file.write_text("logging:\n  level: DEBUG\n", encoding="utf-8")
+        monkeypatch.setenv("PHOENIXSEC_CONFIG", str(config_file))
+        cfg = load_config()
+        assert cfg.logging.level == "DEBUG"

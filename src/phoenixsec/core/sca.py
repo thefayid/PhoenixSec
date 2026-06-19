@@ -107,26 +107,65 @@ class SCAScanner:
         return findings
 
     def _scan_python_pyproject(self, pyproject_file: Path) -> list[Finding]:
+        import tomllib
         findings: list[Finding] = []
-        pip_audit_bin = shutil.which("pip-audit")
-        if not pip_audit_bin:
-            pip_audit_bin = self._find_venv_bin(pyproject_file.parent, "pip-audit")
-
-        if not pip_audit_bin:
-            log.warning("pip-audit not found. Skipping python pyproject dependency scan.")
-            return findings
-
         try:
-            res = subprocess.run(
-                [pip_audit_bin, "-f", str(pyproject_file), "--format", "json"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if res.stdout:
-                findings.extend(self._parse_pip_audit(res.stdout, pyproject_file))
+            with open(pyproject_file, "rb") as f:
+                data = tomllib.load(f)
+            
+            # Extract dependencies
+            deps = []
+            project_data = data.get("project", {})
+            if isinstance(project_data, dict):
+                # Standard PEP 621 dependencies
+                project_deps = project_data.get("dependencies", [])
+                if isinstance(project_deps, list):
+                    deps.extend(project_deps)
+                
+                # Optional dependencies
+                optional_deps = project_data.get("optional-dependencies", {})
+                if isinstance(optional_deps, dict):
+                    for group_deps in optional_deps.values():
+                        if isinstance(group_deps, list):
+                            deps.extend(group_deps)
+            
+            # Also check poetry dependencies if standard is missing
+            poetry_data = data.get("tool", {}).get("poetry", {})
+            if isinstance(poetry_data, dict):
+                poetry_deps = poetry_data.get("dependencies", {})
+                if isinstance(poetry_deps, dict):
+                    for dep, spec in poetry_deps.items():
+                        if dep.lower() != "python":
+                            if isinstance(spec, str):
+                                deps.append(f"{dep}{spec}")
+                            elif isinstance(spec, dict):
+                                version = spec.get("version")
+                                if version:
+                                    deps.append(f"{dep}{version}")
+                                else:
+                                    deps.append(dep)
+
+            if not deps:
+                return findings
+
+            # Create a temporary requirements file
+            temp_req = pyproject_file.parent / f".tmp_req_{pyproject_file.name}.txt"
+            try:
+                temp_req.write_text("\n".join(deps), encoding="utf-8")
+                raw_findings = self._scan_python_requirements(temp_req)
+                
+                # Remap target file_path of findings to actual pyproject.toml
+                from dataclasses import replace
+                for rf in raw_findings:
+                    findings.append(replace(rf, file_path=str(pyproject_file)))
+            finally:
+                if temp_req.is_file():
+                    import contextlib
+                    with contextlib.suppress(Exception):
+                        temp_req.unlink()
+
         except Exception as exc:
-            log.warning(f"Failed to run pip-audit on {pyproject_file}: {exc}")
+            log.warning(f"Failed to scan python pyproject dependencies on {pyproject_file}: {exc}")
 
         return findings
 
@@ -189,6 +228,17 @@ class SCAScanner:
 
     def _scan_node_dependencies(self, pkg_file: Path) -> list[Finding]:
         findings: list[Finding] = []
+        
+        # Check for lockfiles before running npm audit
+        lock_file = pkg_file.parent / "package-lock.json"
+        yarn_lock = pkg_file.parent / "yarn.lock"
+        if not lock_file.is_file() and not yarn_lock.is_file():
+            log.warning(
+                f"Neither package-lock.json nor yarn.lock found in {pkg_file.parent}. "
+                "Skipping Node dependency scan."
+            )
+            return findings
+
         npm_bin = shutil.which("npm")
         if not npm_bin:
             log.warning("npm not found in PATH. Skipping Node dependency scan.")

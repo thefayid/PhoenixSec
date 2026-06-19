@@ -89,11 +89,11 @@ def verify_secret(secret_type: str, value: str) -> bool:
         return False
 
     secret_type_lower = secret_type.lower()
-    
+
     # 1. GitHub API Verification
     if "github" in secret_type_lower or value.startswith("ghp_") or value.startswith("github_pat_"):
-        import urllib.request
         import urllib.error
+        import urllib.request
         req = urllib.request.Request(
             "https://api.github.com/user",
             headers={"Authorization": f"token {value}", "User-Agent": "PhoenixSec-Scanner"}
@@ -107,8 +107,8 @@ def verify_secret(secret_type: str, value: str) -> bool:
 
     # 2. OpenAI API Verification
     elif "openai" in secret_type_lower or "generic key" in secret_type_lower or value.startswith("sk-"):
-        import urllib.request
         import urllib.error
+        import urllib.request
         req = urllib.request.Request(
             "https://api.openai.com/v1/models",
             headers={"Authorization": f"Bearer {value}", "User-Agent": "PhoenixSec-Scanner"}
@@ -245,9 +245,15 @@ class HardcodedSecretsRule(BaseRule):
             # with multiple interpolations
             if re.search(r"\b(SELECT|INSERT|UPDATE|DELETE)\b", line, re.IGNORECASE):
                 continue
+            has_secret_match = bool(
+                _AWS_KEY_RE.search(line)
+                or _GENERIC_KEY_RE.search(line)
+                or _GITHUB_TOKEN_RE.search(line)
+                or _ASSIGNMENT_RE.search(line)
+            )
             is_fstring = bool(re.search(r"\bf['\"]", line)) or 'f"""' in line or "f'''" in line
             has_multiple_interpolations = len(re.findall(r"\{[^}]+\}", line)) >= 2
-            if is_fstring and has_multiple_interpolations:
+            if is_fstring and has_multiple_interpolations and not has_secret_match:
                 continue
 
             matches: list[_SecretMatch] = []

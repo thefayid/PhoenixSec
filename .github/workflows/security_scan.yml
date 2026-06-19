@@ -49,6 +49,55 @@ env:
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
+  # Job: Lint & Format Check
+  # ─────────────────────────────────────────────────────────────────────────────
+  lint:
+    name: "🧹 Lint & Format"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+
+      - name: "🐍 Set up Python ${{ env.PYTHON_VERSION }}"
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: "📦 Install Ruff"
+        run: pip install ruff
+
+      - name: "🧹 Run Ruff Check"
+        run: ruff check .
+
+      - name: "🧹 Run Ruff Format"
+        run: ruff format --check .
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job: Run Unit Tests
+  # ─────────────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: "🧪 Run Unit Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+
+      - name: "🐍 Set up Python ${{ env.PYTHON_VERSION }}"
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: "📦 Install dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: "🧪 Run pytest"
+        run: pytest
+
+  # ─────────────────────────────────────────────────────────────────────────────
   # Job 1: Security Scan
   # ─────────────────────────────────────────────────────────────────────────────
   security-scan:
@@ -306,12 +355,14 @@ jobs:
   pipeline-gate:
     name: "🚦 Pipeline Security Gate"
     runs-on: ubuntu-latest
-    needs: security-scan
+    needs: [security-scan, lint, unit-tests]
     if: always()
 
     steps:
       - name: "🚦 Evaluate Security Gate"
         run: |
+          LINT_STATUS="${{ needs.lint.result }}"
+          TEST_STATUS="${{ needs.unit-tests.result }}"
           BLOCKED="${{ needs.security-scan.outputs.scan_blocked }}"
           TOTAL="${{ needs.security-scan.outputs.findings_count }}"
           CRITICAL="${{ needs.security-scan.outputs.critical_count }}"
@@ -324,8 +375,22 @@ jobs:
           echo "║  Critical        : ${CRITICAL}"
           echo "║  High            : ${HIGH}"
           echo "║  Threshold       : ${{ env.PHOENIXSEC_FAIL_ON }}"
-          echo "║  Decision        : $([ "$BLOCKED" = "true" ] && echo "BLOCKED ❌" || echo "ALLOWED ✅")"
+          echo "║  Decision        : $([ "$BLOCKED" != "true" ] && [ "$LINT_STATUS" = "success" ] && [ "$TEST_STATUS" = "success" ] && echo "ALLOWED ✅" || echo "BLOCKED ❌")"
           echo "╚════════════════════════════════════════════════╝"
+
+          if [ "$LINT_STATUS" != "success" ]; then
+            echo ""
+            echo "❌ PIPELINE BLOCKED: Linting checks failed"
+            echo ""
+            exit 1
+          fi
+
+          if [ "$TEST_STATUS" != "success" ]; then
+            echo ""
+            echo "❌ PIPELINE BLOCKED: Unit tests failed"
+            echo ""
+            exit 1
+          fi
 
           if [ "$BLOCKED" = "true" ]; then
             echo ""

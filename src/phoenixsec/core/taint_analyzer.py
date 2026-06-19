@@ -5,7 +5,7 @@ Traces variable taint across function and file boundaries using a static call gr
 
 from __future__ import annotations
 
-import re
+import ast
 from pathlib import Path
 
 from phoenixsec.core.logger import get_logger
@@ -15,16 +15,76 @@ from phoenixsec.models.vulnerability import Severity
 log = get_logger(__name__)
 
 
+def _walk_local_body(node: ast.AST):
+    """Walk nodes in the function body, but do not cross into nested function or class definitions."""
+    todo = list(node.body) if hasattr(node, "body") else []
+    while todo:
+        curr = todo.pop(0)
+        yield curr
+        # Do not descend into nested FunctionDef, AsyncFunctionDef, or ClassDef
+        if not isinstance(curr, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if hasattr(curr, "_fields"):
+                for field_name in curr._fields:
+                    field_val = getattr(curr, field_name)
+                    if isinstance(field_val, list):
+                        todo.extend(field_val)
+                    elif isinstance(field_val, ast.AST):
+                        todo.append(field_val)
+
+
+def _get_referenced_vars(node: ast.AST) -> set[str]:
+    """Return all variable names referenced in the AST node."""
+    vars_found = set()
+    for child in ast.walk(node):
+        if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load):
+            vars_found.add(child.id)
+    return vars_found
+
+
+def _get_call_name(node: ast.Call) -> str | None:
+    """Extract name of the function or method being called."""
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id
+    elif isinstance(func, ast.Attribute):
+        return func.attr
+    return None
+
+
+def _is_direct_source(node: ast.AST) -> bool:
+    """Check if the AST node represents a direct taint source (references request, req, GET, etc.)."""
+    for child in ast.walk(node):
+        if isinstance(child, ast.Name) and child.id in {"request", "req", "GET", "POST", "args", "input", "params"} or isinstance(child, ast.Attribute) and child.attr in {"request", "req", "GET", "POST", "args", "input", "params"}:
+            return True
+    return False
+
+
+def _is_formatted_expr(expr_node: ast.AST) -> bool:
+    """Check if the expression represents a formatted/concatenated string."""
+    for n in ast.walk(expr_node):
+        if isinstance(n, ast.JoinedStr):  # f-string
+            return True
+        elif isinstance(n, ast.BinOp):
+            if isinstance(n.op, (ast.Mod, ast.Add)):  # % or +
+                return True
+        elif isinstance(n, ast.Call):
+            # .format() call
+            if isinstance(n.func, ast.Attribute) and n.func.attr == "format":
+                return True
+    return False
+
+
 class FunctionDef:
     """Represents a static function definition in the codebase."""
 
-    def __init__(self, name: str, file_path: str, params: list[str]):
+    def __init__(self, name: str, file_path: str, params: list[str], ast_node: ast.FunctionDef | None = None) -> None:
         self.name = name
         self.file_path = file_path
         self.params = params
         self.sink_params: set[int] = set()  # Indices of parameters that flow into a sink
+        self.sink_types: dict[int, set[VulnerabilityType]] = {}  # param index -> set of vulnerability types
         self.return_params: set[int] = set()  # Indices of parameters returned
-        self.body_lines: list[tuple[int, str]] = []  # Body lines as (line_no, content)
+        self.ast_node = ast_node
 
 
 class TaintAnalyzer:
@@ -64,96 +124,81 @@ class TaintAnalyzer:
         self.propagate_call_graph()
 
     def analyze_file_definitions(self, file_path: Path) -> None:
-        content = file_path.read_text(encoding="utf-8")
-        lines = content.splitlines()
+        try:
+            content = file_path.read_text(encoding="utf-8")
+            tree = ast.parse(content, filename=str(file_path))
+        except Exception as e:
+            log.warning(f"Failed to parse AST for {file_path}: {e}")
+            return
 
-        # Find function definitions using regex: def func_name(param1, param2):
-        def_pattern = re.compile(r"^\s*def\s+(\w+)\s*\(([^)]*)\):")
+        # Find function definitions using ast.walk
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                func_name = node.name
+                params = [arg.arg for arg in node.args.args]
 
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            match = def_pattern.match(line)
-            if match:
-                func_name = match.group(1)
-                param_str = match.group(2)
-                params = [
-                    p.strip().split(":")[0].strip() for p in param_str.split(",") if p.strip()
-                ]
-
-                func_def = FunctionDef(func_name, str(file_path), params)
-
-                # Gather function body lines (lines with more indentation than def line)
-                body_lines = []
-                indent_match = re.match(r"^(\s*)def", line)
-                def_indent = len(indent_match.group(1)) if indent_match else 0
-
-                j = i + 1
-                while j < len(lines):
-                    next_line = lines[j]
-                    if not next_line.strip():
-                        j += 1
-                        continue
-                    next_indent_match = re.match(r"^(\s*)", next_line)
-                    next_indent = len(next_indent_match.group(1)) if next_indent_match else 0
-                    if next_indent <= def_indent:
-                        break
-                    body_lines.append((j + 1, next_line))  # 1-indexed line number
-                    j += 1
+                func_def = FunctionDef(func_name, str(file_path), params, node)
 
                 # Analyze function body for parameter sinks and returns
                 for idx, param in enumerate(params):
                     if not param or param in {"self", "cls"}:
                         continue
-                    for line_no, b_line in body_lines:
-                        # Sinks checking: SQL, command injection, path traversal
-                        sql_sink = re.search(
-                            r"\b(execute|query|Exec)\b.*?\b" + re.escape(param) + r"\b", b_line
-                        )
-                        cmd_sink = re.search(
-                            r"\b(system|run|Popen|Command)\b.*?\b" + re.escape(param) + r"\b",
-                            b_line,
-                        )
-                        traversal_sink = re.search(
-                            r"\b(open|join|Path)\b.*?\b" + re.escape(param) + r"\b", b_line
-                        )
 
-                        # If parameter is used inside a call to a sink, and there is concatenation or formatting
-                        if (
-                            sql_sink
-                            and (
-                                "+" in b_line
-                                or "%" in b_line
-                                or 'f"' in b_line
-                                or "f'" in b_line
-                                or ".format" in b_line
-                            )
-                            or cmd_sink
-                            or traversal_sink
-                            and ("+" in b_line or "%" in b_line or 'f"' in b_line or "f'" in b_line)
-                        ):
-                            func_def.sink_params.add(idx)
+                    for stmt in _walk_local_body(node):
+                        # Sinks checking: SQL, command injection, path traversal
+                        if isinstance(stmt, ast.Call):
+                            call_name = _get_call_name(stmt)
+                            if call_name:
+                                # Check if parameter is used inside arguments or keywords
+                                for arg in stmt.args:
+                                    if param in _get_referenced_vars(arg):
+                                        if call_name in ("execute", "query", "Exec"):
+                                            if _is_formatted_expr(arg):
+                                                func_def.sink_params.add(idx)
+                                                func_def.sink_types.setdefault(idx, set()).add(VulnerabilityType.SQL_INJECTION)
+                                        elif call_name in ("system", "run", "Popen", "Command"):
+                                            func_def.sink_params.add(idx)
+                                            func_def.sink_types.setdefault(idx, set()).add(VulnerabilityType.COMMAND_INJECTION)
+                                        elif call_name in ("open", "join", "Path"):
+                                            if _is_formatted_expr(arg):
+                                                func_def.sink_params.add(idx)
+                                                func_def.sink_types.setdefault(idx, set()).add(VulnerabilityType.PATH_TRAVERSAL)
+
+                                for kw in stmt.keywords:
+                                    if param in _get_referenced_vars(kw.value):
+                                        if call_name in ("execute", "query", "Exec"):
+                                            if _is_formatted_expr(kw.value):
+                                                func_def.sink_params.add(idx)
+                                                func_def.sink_types.setdefault(idx, set()).add(VulnerabilityType.SQL_INJECTION)
+                                        elif call_name in ("system", "run", "Popen", "Command"):
+                                            func_def.sink_params.add(idx)
+                                            func_def.sink_types.setdefault(idx, set()).add(VulnerabilityType.COMMAND_INJECTION)
+                                        elif call_name in ("open", "join", "Path"):
+                                            if _is_formatted_expr(kw.value):
+                                                func_def.sink_params.add(idx)
+                                                func_def.sink_types.setdefault(idx, set()).add(VulnerabilityType.PATH_TRAVERSAL)
 
                         # Check if returned
-                        if re.search(r"\breturn\b.*?\b" + re.escape(param) + r"\b", b_line):
-                            func_def.return_params.add(idx)
+                        if isinstance(stmt, ast.Return) and stmt.value:
+                            if param in _get_referenced_vars(stmt.value):
+                                func_def.return_params.add(idx)
 
-                func_def.body_lines = body_lines
                 self.functions[func_name] = func_def
-                i = j - 1
-            i += 1
 
     def propagate_call_graph(self) -> None:
         """Propagate sink and return parameters across the call graph using fixed-point iteration."""
         changed = True
         iterations = 0
-        max_iterations = 5
+        max_iterations = 100
 
         while changed and iterations < max_iterations:
             changed = False
             iterations += 1
 
             for func_name, func_def in self.functions.items():
+                if not func_def.ast_node:
+                    continue
+
                 for idx, param in enumerate(func_def.params):
                     if not param or param in {"self", "cls"}:
                         continue
@@ -161,161 +206,216 @@ class TaintAnalyzer:
                     # Track local variables inside this function that are tainted by this param
                     local_tainted: set[str] = {param}
 
-                    for line_no, b_line in func_def.body_lines:
-                        # Check assignments: var = expression containing a tainted variable
-                        assign_match = re.match(r"^\s*(\w+)\s*=\s*(.*)$", b_line)
-                        if assign_match:
-                            lhs = assign_match.group(1)
-                            rhs = assign_match.group(2)
-                            for t_var in list(local_tainted):
-                                if re.search(r"\b" + re.escape(t_var) + r"\b", rhs):
-                                    if lhs not in local_tainted:
-                                        local_tainted.add(lhs)
+                    # Walk the function body statements in order
+                    for stmt in _walk_local_body(func_def.ast_node):
+                        # 1. Track assignments
+                        if isinstance(stmt, ast.Assign):
+                            # Target variables
+                            targets = []
+                            for target in stmt.targets:
+                                if isinstance(target, ast.Name):
+                                    targets.append(target.id)
+                                elif isinstance(target, (ast.Tuple, ast.List)):
+                                    for elt in target.elts:
+                                        if isinstance(elt, ast.Name):
+                                            targets.append(elt.id)
+
+                            # Value variables
+                            ref_vars = _get_referenced_vars(stmt.value)
+                            if ref_vars.intersection(local_tainted):
+                                for target_name in targets:
+                                    if target_name not in local_tainted:
+                                        local_tainted.add(target_name)
                                         changed = True
-                                    break
 
-                        # Check for calls to other registered functions in the body
-                        for other_name, other_def in self.functions.items():
-                            if other_name == func_name:
-                                continue
-                            call_pattern = re.compile(re.escape(other_name) + r"\s*\(([^)]*)\)")
-                            call_match = call_pattern.search(b_line)
-                            if call_match:
-                                args_str = call_match.group(1)
-                                args = [a.strip() for a in args_str.split(",") if a.strip()]
+                        elif isinstance(stmt, (ast.AnnAssign, ast.AugAssign)):
+                            if isinstance(stmt.target, ast.Name) and stmt.value:
+                                target_name = stmt.target.id
+                                ref_vars = _get_referenced_vars(stmt.value)
+                                if ref_vars.intersection(local_tainted):
+                                    if target_name not in local_tainted:
+                                        local_tainted.add(target_name)
+                                        changed = True
 
-                                for arg_idx, arg in enumerate(args):
-                                    arg_tainted = False
-                                    for t_var in local_tainted:
-                                        if re.search(r"\b" + re.escape(t_var) + r"\b", arg):
-                                            arg_tainted = True
-                                            break
-
-                                    if arg_tainted:
-                                        # If the called function treats this argument index as a sink
-                                        if arg_idx in other_def.sink_params:
-                                            if idx not in func_def.sink_params:
-                                                func_def.sink_params.add(idx)
-                                                changed = True
-
-                                        # If the called function returns this argument index and it's assigned
-                                        if arg_idx in other_def.return_params:
-                                            if assign_match:
-                                                lhs = assign_match.group(1)
-                                                if lhs not in local_tainted:
-                                                    local_tainted.add(lhs)
+                        # 2. Check for calls to other registered functions in this statement/node
+                        for child in ast.walk(stmt):
+                            if isinstance(child, ast.Call):
+                                call_name = _get_call_name(child)
+                                if call_name and call_name in self.functions and call_name != func_name:
+                                    other_def = self.functions[call_name]
+                                    # Check arguments passed to other_def
+                                    for arg_idx, arg in enumerate(child.args):
+                                        ref_vars = _get_referenced_vars(arg)
+                                        if ref_vars.intersection(local_tainted):
+                                            # If other_def has this parameter index as a sink
+                                            if arg_idx in other_def.sink_params:
+                                                if idx not in func_def.sink_params:
+                                                    func_def.sink_params.add(idx)
                                                     changed = True
+                                                other_types = other_def.sink_types.get(arg_idx, set())
+                                                if not other_types:
+                                                    other_types = {VulnerabilityType.SQL_INJECTION}
+                                                for vt in other_types:
+                                                    if vt not in func_def.sink_types.setdefault(idx, set()):
+                                                        func_def.sink_types[idx].add(vt)
+                                                        changed = True
 
-                        # If return statement returns a local tainted variable
-                        if re.search(r"\breturn\b", b_line):
-                            for t_var in local_tainted:
-                                if re.search(r"\breturn\b.*?\b" + re.escape(t_var) + r"\b", b_line):
-                                    if idx not in func_def.return_params:
-                                        func_def.return_params.add(idx)
-                                        changed = True
-                                    break
+                                            # If other_def returns this param, and the call is part of an assignment
+                                            if arg_idx in other_def.return_params:
+                                                if isinstance(stmt, ast.Assign):
+                                                    for target in stmt.targets:
+                                                        if isinstance(target, ast.Name):
+                                                            if target.id not in local_tainted:
+                                                                local_tainted.add(target.id)
+                                                                changed = True
+                                                elif isinstance(stmt, (ast.AnnAssign, ast.AugAssign)):
+                                                    if isinstance(stmt.target, ast.Name):
+                                                        if stmt.target.id not in local_tainted:
+                                                            local_tainted.add(stmt.target.id)
+                                                            changed = True
+
+                        # 3. Check return statements
+                        if isinstance(stmt, ast.Return) and stmt.value:
+                            ref_vars = _get_referenced_vars(stmt.value)
+                            if ref_vars.intersection(local_tainted):
+                                if idx not in func_def.return_params:
+                                    func_def.return_params.add(idx)
+                                    changed = True
+
+    def _trace_taint_in_scope(
+        self,
+        nodes: list[ast.stmt],
+        file_path: Path | str,
+        findings: list[Finding]
+    ) -> None:
+        tainted_vars: dict[str, str] = {}  # var_name -> source_expression
+
+        for stmt in nodes:
+            # Skip nested function definitions to analyze them in their own call scopes
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+
+            # 1. Match direct sources and assignments
+            if isinstance(stmt, ast.Assign):
+                # Get target names
+                targets = []
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name):
+                        targets.append(target.id)
+                    elif isinstance(target, (ast.Tuple, ast.List)):
+                        for elt in target.elts:
+                            if isinstance(elt, ast.Name):
+                                targets.append(elt.id)
+
+                # Check if RHS is direct source
+                if _is_direct_source(stmt.value):
+                    src_expr = ast.unparse(stmt.value)
+                    for target_name in targets:
+                        tainted_vars[target_name] = src_expr
+                else:
+                    # Check if RHS references any tainted variable
+                    ref_vars = _get_referenced_vars(stmt.value)
+                    intersect = ref_vars.intersection(tainted_vars)
+                    if intersect:
+                        src_expr = tainted_vars[next(iter(intersect))]
+                        for target_name in targets:
+                            tainted_vars[target_name] = src_expr
+
+            elif isinstance(stmt, (ast.AnnAssign, ast.AugAssign)):
+                if isinstance(stmt.target, ast.Name) and stmt.value:
+                    target_name = stmt.target.id
+                    if _is_direct_source(stmt.value):
+                        tainted_vars[target_name] = ast.unparse(stmt.value)
+                    else:
+                        ref_vars = _get_referenced_vars(stmt.value)
+                        intersect = ref_vars.intersection(tainted_vars)
+                        if intersect:
+                            tainted_vars[target_name] = tainted_vars[next(iter(intersect))]
+
+            # 2. Check for calls to other registered functions
+            for child in ast.walk(stmt):
+                if isinstance(child, ast.Call):
+                    call_name = _get_call_name(child)
+                    if call_name and call_name in self.functions:
+                        func_def = self.functions[call_name]
+                        for idx, arg in enumerate(child.args):
+                            is_arg_tainted = False
+                            source_expr = None
+
+                            ref_vars = _get_referenced_vars(arg)
+                            intersect = ref_vars.intersection(tainted_vars)
+                            if intersect:
+                                is_arg_tainted = True
+                                source_expr = tainted_vars[next(iter(intersect))]
+                            elif _is_direct_source(arg):
+                                is_arg_tainted = True
+                                source_expr = ast.unparse(arg)
+
+                            if is_arg_tainted:
+                                if idx in func_def.sink_params:
+                                    # Determine actual vulnerability types (Issue 6.3)
+                                    default_type = {VulnerabilityType.SQL_INJECTION}
+                                    vuln_types = func_def.sink_types.get(idx, default_type)
+                                    for vuln_type in vuln_types:
+                                        cwe_id = "CWE-89"
+                                        if vuln_type == VulnerabilityType.COMMAND_INJECTION:
+                                            cwe_id = "CWE-78"
+                                        elif vuln_type == VulnerabilityType.PATH_TRAVERSAL:
+                                            cwe_id = "CWE-22"
+
+                                        h_name = Path(func_def.file_path).name
+                                        p_name = func_def.params[idx]
+                                        findings.append(
+                                            Finding(
+                                                vulnerability_type=vuln_type,
+                                                severity=Severity.CRITICAL,
+                                                confidence_score=0.85,
+                                                recommendation=(
+                                                    f"Function '{call_name}' defined in "
+                                                    f"{h_name} executes a dangerous sink "
+                                                    f"with tainted parameter '{p_name}'. "
+                                                    "Ensure the input is parameterized "
+                                                    "or sanitized."
+                                                ),
+                                                file_path=str(file_path),
+                                                line_number=getattr(stmt, "lineno", 1),
+                                                source=source_expr,
+                                                sink=(
+                                                    f"Call to {call_name}() passing tainted arg "
+                                                    f"'{ast.unparse(arg)}' to sink param "
+                                                    f"'{p_name}'"
+                                                ),
+                                                rule_id="TAINT-CROSS-FILE-001",
+                                                cwe_id=cwe_id,
+                                                code_snippet=ast.unparse(stmt).strip(),
+                                            )
+                                        )
+
+                                # Track propagation back from functions that return tainted values
+                                if idx in func_def.return_params:
+                                    if isinstance(stmt, ast.Assign):
+                                        for target in stmt.targets:
+                                            if isinstance(target, ast.Name):
+                                                tainted_vars[target.id] = source_expr
+                                    elif isinstance(stmt, (ast.AnnAssign, ast.AugAssign)):
+                                        if isinstance(stmt.target, ast.Name):
+                                            tainted_vars[stmt.target.id] = source_expr
 
     def trace_file_calls(self, file_path: Path | str, code: str) -> list[Finding]:
         """Trace calls in source code to find cross-file or inter-procedural taint propagation."""
         findings: list[Finding] = []
-        lines = code.splitlines()
+        try:
+            tree = ast.parse(code, filename=str(file_path))
+        except Exception as e:
+            log.warning(f"Failed to parse AST for file calls trace: {e}")
+            return []
 
-        # Keep track of local variables that are tainted: var_name -> source_expression
-        tainted_vars: dict[str, str] = {}
+        # 1. Trace taint at the module level
+        self._trace_taint_in_scope(tree.body, file_path, findings)
 
-        # Identify direct taint sources (e.g. user_input = request.GET['id'])
-        source_pattern = re.compile(
-            r"(\w+)\s*=\s*(.*?\b(request|req|GET|POST|args|input|params)\b.*)"
-        )
-
-        for i, line in enumerate(lines):
-            line_no = i + 1
-
-            # Skip function definitions (so we don't treat them as call sites)
-            if re.match(r"^\s*def\s+", line):
-                continue
-
-            # 1. Match direct sources
-            match = source_pattern.search(line)
-            if match:
-                var_name = match.group(1)
-                src_expr = match.group(2)
-                tainted_vars[var_name] = src_expr
-                log.debug(
-                    f"TaintAnalyzer: Local variable '{var_name}' tainted by source '{src_expr}' on line {line_no}"
-                )
-
-            # 2. Local propagation check: check assignments for RHS containing a tainted variable
-            assign_match = re.match(r"^\s*(\w+)\s*=\s*(.*)$", line)
-            if assign_match:
-                lhs = assign_match.group(1)
-                rhs = assign_match.group(2)
-                # Ensure we don't overwrite if it was already marked as a direct source on this line
-                if lhs not in tainted_vars or not source_pattern.search(line):
-                    for tainted_var, src_expr in list(tainted_vars.items()):
-                        if tainted_var == lhs:
-                            continue
-                        if re.search(r"\b" + re.escape(tainted_var) + r"\b", rhs):
-                            tainted_vars[lhs] = src_expr
-                            log.debug(
-                                f"TaintAnalyzer: Local variable '{lhs}' tainted by propagation from '{tainted_var}' on line {line_no}"
-                            )
-                            break
-
-            # 3. Check for function calls with tainted variables
-            for func_name, func_def in self.functions.items():
-                call_pattern = re.compile(re.escape(func_name) + r"\s*\(([^)]*)\)")
-                call_match = call_pattern.search(line)
-                if call_match:
-                    args_str = call_match.group(1)
-                    args = [a.strip() for a in args_str.split(",") if a.strip()]
-
-                    for idx, arg in enumerate(args):
-                        is_arg_tainted = False
-                        source_expr = None
-
-                        if arg in tainted_vars:
-                            is_arg_tainted = True
-                            source_expr = tainted_vars[arg]
-                        else:
-                            for key in tainted_vars:
-                                if re.search(r"\b" + re.escape(key) + r"\b", arg):
-                                    is_arg_tainted = True
-                                    source_expr = tainted_vars[key]
-                                    break
-                            if not is_arg_tainted and re.search(r"\b(request|req|GET|POST|args|input|params)\b", arg):
-                                is_arg_tainted = True
-                                source_expr = arg
-
-                        if is_arg_tainted:
-                            if idx in func_def.sink_params:
-                                # Found cross-file / inter-procedural taint propagation vulnerability!
-                                findings.append(
-                                    Finding(
-                                        vulnerability_type=VulnerabilityType.SQL_INJECTION,
-                                        severity=Severity.CRITICAL,
-                                        confidence_score=0.85,
-                                        recommendation=(
-                                            f"Function '{func_name}' defined in {Path(func_def.file_path).name} "
-                                            f"executes a dangerous sink with tainted parameter '{func_def.params[idx]}'. "
-                                            f"Ensure the input is parameterized or sanitized."
-                                        ),
-                                        file_path=str(file_path),
-                                        line_number=line_no,
-                                        source=source_expr,
-                                        sink=f"Call to {func_name}() passing tainted arg '{arg}' to sink param '{func_def.params[idx]}'",
-                                        rule_id="TAINT-CROSS-FILE-001",
-                                        cwe_id="CWE-89",
-                                        code_snippet=line.strip(),
-                                    )
-                                )
-
-                            if idx in func_def.return_params:
-                                if assign_match:
-                                    return_var = assign_match.group(1)
-                                    tainted_vars[return_var] = source_expr
-                                    log.debug(
-                                        f"TaintAnalyzer: Var '{return_var}' tainted by return of '{func_name}' on line {line_no}"
-                                    )
+        # 2. Trace taint inside each function defined in the file
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                self._trace_taint_in_scope(node.body, file_path, findings)
 
         return findings

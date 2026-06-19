@@ -47,6 +47,7 @@ _JS_SOURCE_RE = re.compile(
 
 _CONCAT_RE = re.compile(r"\+\s*[a-zA-Z_]|[a-zA-Z_]\s*\+|\bf['\"]|%s|\.format\(", re.IGNORECASE)
 _NOSQL_WHERE_RE = re.compile(r"['\"]\$where['\"]", re.IGNORECASE)
+_NOSQL_REGEX_RE = re.compile(r"['\"]\$regex['\"]", re.IGNORECASE)
 
 _WINDOW = 8
 _SCORE_THRESHOLD = 0.50
@@ -82,8 +83,8 @@ def _score_sink(sink: _NoSQLSink) -> float:
     if _CONCAT_RE.search(sink.line):
         score += 0.20
 
-    # +0.30 — Dangerous $where clause in context
-    if _NOSQL_WHERE_RE.search(window_text):
+    # +0.30 — Dangerous $where clause or $regex operator in context
+    if _NOSQL_WHERE_RE.search(window_text) or _NOSQL_REGEX_RE.search(window_text):
         score += 0.30
 
     # -0.30 — No variables on the sink line
@@ -115,10 +116,10 @@ def _build_finding(sink: _NoSQLSink, file_path: str) -> Finding:
             "Use query filters as key-value dictionaries. Avoid `$where` operators containing "
             "evaluable user-controlled JavaScript code strings."
         ),
-        references=[
+        references=(
             "https://owasp.org/www-pdf-archive/OWASP_Top_10_2013_Explanation_of_NoSQL_Injection.pdf",
             "https://cwe.mitre.org/data/definitions/943.html",
-        ],
+        ),
     )
 
 

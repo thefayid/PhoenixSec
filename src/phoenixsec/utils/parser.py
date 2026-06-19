@@ -336,22 +336,45 @@ class FileParser:
             parser = FileParser()
             source = parser.read_file("app/main.py")
         """
-        resolved = self._resolve(path)
-        self._check_exists(resolved)
-        self._check_readable(resolved)
-        self._check_extension(resolved)
-        self._check_size(resolved)
+        try:
+            resolved = self._resolve(path)
+            self._check_exists(resolved)
+            self._check_readable(resolved)
+            self._check_extension(resolved)
+            self._check_size(resolved)
 
-        lang_info = self.SUPPORTED_LANGUAGES[self._get_extension_key(resolved)]
-        content, encoding = self._decode(resolved, lang_info.encoding_hints)
+            lang_info = self.SUPPORTED_LANGUAGES[self._get_extension_key(resolved)]
+            content, encoding = self._decode(resolved, lang_info.encoding_hints)
 
-        log.debug(
-            "read_file: success",
-            path=str(resolved),
-            encoding=encoding,
-            bytes=resolved.stat().st_size,
-        )
-        return content
+            log.debug(
+                "read_file: success",
+                path=str(resolved),
+                encoding=encoding,
+                bytes=resolved.stat().st_size,
+            )
+            return content
+        except ParseError:
+            raise
+        except FileNotFoundError as exc:
+            raise FileNotFoundParseError(
+                f"Source file not found: {path}",
+                context={"path": str(path)},
+            ) from exc
+        except PermissionError as exc:
+            raise FilePermissionError(
+                f"Permission denied: cannot read {path}",
+                context={"path": str(path)},
+            ) from exc
+        except OSError as exc:
+            raise ParseError(
+                f"OS error reading file {path}: {exc}",
+                context={"path": str(path)},
+            ) from exc
+        except Exception as exc:
+            raise ParseError(
+                f"Error reading file {path}: {exc}",
+                context={"path": str(path)},
+            ) from exc
 
     def detect_language(self, path: str | Path) -> LanguageInfo:
         """Detect the programming language of a source file by its extension.
@@ -384,8 +407,16 @@ class FileParser:
             print(lang.name)        # "Java"
             print(lang.extension)   # ".java"
         """
-        self._check_extension(Path(path))
-        return self.SUPPORTED_LANGUAGES[self._get_extension_key(Path(path))]
+        try:
+            self._check_extension(Path(path))
+            return self.SUPPORTED_LANGUAGES[self._get_extension_key(Path(path))]
+        except ParseError:
+            raise
+        except Exception as exc:
+            raise ParseError(
+                f"Error detecting language for {path}: {exc}",
+                context={"path": str(path)},
+            ) from exc
 
     def validate_file(self, path: str | Path) -> FileMetadata:
         """Validate a source file and return rich metadata about it.
@@ -427,38 +458,61 @@ class FileParser:
             print(meta.line_count)  # 142
             print(meta.to_dict())
         """
-        resolved = self._resolve(path)
-        self._check_exists(resolved)
-        self._check_readable(resolved)
-        self._check_extension(resolved)
-        self._check_size(resolved)
+        try:
+            resolved = self._resolve(path)
+            self._check_exists(resolved)
+            self._check_readable(resolved)
+            self._check_extension(resolved)
+            self._check_size(resolved)
 
-        lang_info = self.SUPPORTED_LANGUAGES[self._get_extension_key(resolved)]
-        content, encoding = self._decode(resolved, lang_info.encoding_hints)
+            lang_info = self.SUPPORTED_LANGUAGES[self._get_extension_key(resolved)]
+            content, encoding = self._decode(resolved, lang_info.encoding_hints)
 
-        file_stat = resolved.stat()
-        # Count lines: add trailing line if content doesn't end with newline
-        line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
-        last_modified = datetime.fromtimestamp(file_stat.st_mtime, tz=UTC)
+            file_stat = resolved.stat()
+            # Count lines: add trailing line if content doesn't end with newline
+            line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+            last_modified = datetime.fromtimestamp(file_stat.st_mtime, tz=UTC)
 
-        metadata = FileMetadata(
-            path=str(resolved),
-            language=lang_info.name,
-            extension=resolved.suffix.lower(),
-            size_bytes=file_stat.st_size,
-            line_count=line_count,
-            encoding=encoding,
-            is_empty=file_stat.st_size == 0,
-            last_modified=last_modified,
-        )
+            metadata = FileMetadata(
+                path=str(resolved),
+                language=lang_info.name,
+                extension=resolved.suffix.lower(),
+                size_bytes=file_stat.st_size,
+                line_count=line_count,
+                encoding=encoding,
+                is_empty=file_stat.st_size == 0,
+                last_modified=last_modified,
+            )
 
-        log.debug(
-            "validate_file: success",
-            path=str(resolved),
-            language=lang_info.name,
-            line_count=line_count,
-        )
-        return metadata
+            log.debug(
+                "validate_file: success",
+                path=str(resolved),
+                language=lang_info.name,
+                line_count=line_count,
+            )
+            return metadata
+        except ParseError:
+            raise
+        except FileNotFoundError as exc:
+            raise FileNotFoundParseError(
+                f"Source file not found: {path}",
+                context={"path": str(path)},
+            ) from exc
+        except PermissionError as exc:
+            raise FilePermissionError(
+                f"Permission denied: cannot read {path}",
+                context={"path": str(path)},
+            ) from exc
+        except OSError as exc:
+            raise ParseError(
+                f"OS error validating file {path}: {exc}",
+                context={"path": str(path)},
+            ) from exc
+        except Exception as exc:
+            raise ParseError(
+                f"Error validating file {path}: {exc}",
+                context={"path": str(path)},
+            ) from exc
 
     # ── Class-level utilities ──────────────────────────────────────────────────
 
@@ -502,7 +556,10 @@ class FileParser:
         bool
             ``True`` if the extension is in ``SUPPORTED_LANGUAGES``.
         """
-        return cls._get_extension_key(Path(path)) in cls.SUPPORTED_LANGUAGES
+        try:
+            return cls._get_extension_key(Path(path)) in cls.SUPPORTED_LANGUAGES
+        except Exception:
+            return False
 
     @classmethod
     def _get_extension_key(cls, path: Path) -> str:
@@ -621,12 +678,12 @@ class FileParser:
                     context={"path": str(path), "encoding": enc},
                 ) from exc
 
-        raise ParseError(
-            f"Could not decode {path.name} with any of the configured encodings: "
-            f"{', '.join(encodings)}",
-            context={
-                "path": str(path),
-                "encodings": list(encodings),
-                "last_error": str(last_exc),
-            },
-        )
+        # Fallback to utf-8-sig with errors="replace"
+        try:
+            content = path.read_text(encoding="utf-8-sig", errors="replace")
+            return content, "utf-8-sig"
+        except OSError as exc:
+            raise FilePermissionError(
+                f"OS error reading {path}: {exc}",
+                context={"path": str(path), "encoding": "utf-8-sig"},
+            ) from exc

@@ -238,11 +238,11 @@ def _build_finding(sink: _PathSink, file_path: str) -> Finding:
             "In Node.js, use `path.resolve()` and verify it starts with the base dir. "
             "Never concatenate user input directly into file paths."
         ),
-        references=[
+        references=(
             "https://owasp.org/www-community/attacks/Path_Traversal",
             "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html",
             "https://cwe.mitre.org/data/definitions/22.html",
-        ],
+        ),
     )
 
 

@@ -1,9 +1,5 @@
 """Rules package — public API."""
 
-from phoenixsec.rules.base_rule import BaseRule, RuleContext
-from phoenixsec.rules.engine import EngineResult, RuleEngine
-from phoenixsec.rules.registry import RuleRegistry, rule
-
 # Import all built-in rules to ensure they register automatically via @rule
 from phoenixsec.rules import (
     ast_rules,
@@ -25,6 +21,9 @@ from phoenixsec.rules import (
     xss,
     xxe,
 )
+from phoenixsec.rules.base_rule import BaseRule, RuleContext
+from phoenixsec.rules.engine import EngineResult, RuleEngine
+from phoenixsec.rules.registry import RuleRegistry, rule
 
 __all__ = [
     "BaseRule",

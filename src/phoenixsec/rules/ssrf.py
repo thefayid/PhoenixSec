@@ -255,11 +255,11 @@ def _build_finding(sink: _SSRFSink, file_path: str) -> Finding:
             "Block private/loopback address ranges (10.x, 172.16.x, 192.168.x, 127.x). "
             "Consider using a dedicated HTTP proxy/egress gateway."
         ),
-        references=[
+        references=(
             "https://owasp.org/Top10/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/",
             "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
             "https://cwe.mitre.org/data/definitions/918.html",
-        ],
+        ),
     )
 
 

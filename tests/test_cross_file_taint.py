@@ -86,3 +86,111 @@ def test_advanced_taint_propagation(tmp_path):
     assert findings[0].line_number == 5
     assert findings[0].source == "request.GET['username']"
 
+
+def test_cross_file_command_injection_and_path_traversal(tmp_path):
+    # 1. Create a helper with command injection and path traversal sinks
+    helper_file = tmp_path / "helpers.py"
+    helper_file.write_text(
+        "import subprocess\n"
+        "def run_cmd(command):\n"
+        "    subprocess.run(command, shell=True)\n"
+        "def read_file(path):\n"
+        "    open(path + '.txt')\n",
+        encoding="utf-8"
+    )
+
+    # 2. Create app file
+    app_file = tmp_path / "app.py"
+    app_code = (
+        "from helpers import run_cmd, read_file\n"
+        "def test(request):\n"
+        "    val = request.GET['val']\n"
+        "    run_cmd(val)\n"
+        "    read_file(val)\n"
+    )
+    app_file.write_text(app_code, encoding="utf-8")
+
+    analyzer = TaintAnalyzer()
+    analyzer.analyze_directory(tmp_path)
+
+    # Verify functions are registered with their correct sink parameter indices
+    assert "run_cmd" in analyzer.functions
+    assert "read_file" in analyzer.functions
+    assert 0 in analyzer.functions["run_cmd"].sink_params
+    assert 0 in analyzer.functions["read_file"].sink_params
+
+    # Run trace and assert correct vulnerability types and CWEs are generated
+    findings = analyzer.trace_file_calls(app_file, app_code)
+    assert len(findings) == 2
+
+    # Check Command Injection finding
+    cmd_findings = [f for f in findings if f.vulnerability_type == VulnerabilityType.COMMAND_INJECTION]
+    assert len(cmd_findings) == 1
+    assert cmd_findings[0].cwe_id == "CWE-78"
+
+    # Check Path Traversal finding
+    pt_findings = [f for f in findings if f.vulnerability_type == VulnerabilityType.PATH_TRAVERSAL]
+    assert len(pt_findings) == 1
+    assert pt_findings[0].cwe_id == "CWE-22"
+
+
+def test_taint_complex_calls(tmp_path):
+    # Verifies multi-line call, nested call, and lambda/closure parameter arguments
+    helper_file = tmp_path / "helper.py"
+    helper_file.write_text(
+        "def do_query(q):\n"
+        "    cursor.execute(f'SELECT * FROM u WHERE id = {q}')\n",
+        encoding="utf-8"
+    )
+
+    app_file = tmp_path / "app.py"
+    app_code = (
+        "from helper import do_query\n"
+        "def handle(request):\n"
+        "    # Multi-line call:\n"
+        "    do_query(\n"
+        "        request.GET['id']\n"
+        "    )\n"
+        "    # Nested call:\n"
+        "    do_query(str(request.GET['id']))\n"
+        "    # Call with lambda/closure arg:\n"
+        "    do_query((lambda: request.GET['id'])())\n"
+    )
+    app_file.write_text(app_code, encoding="utf-8")
+
+    analyzer = TaintAnalyzer()
+    analyzer.analyze_directory(tmp_path)
+
+    findings = analyzer.trace_file_calls(app_file, app_code)
+    # Under AST analysis, all 3 calls should be successfully traced!
+    assert len(findings) == 3
+    for f in findings:
+        assert f.vulnerability_type == VulnerabilityType.SQL_INJECTION
+
+
+def test_circular_call_graph_termination(tmp_path):
+    # Verifies that circular dependencies do not infinite-loop
+    f1 = tmp_path / "f1.py"
+    f1.write_text(
+        "from f2 import func2\n"
+        "def func1(a):\n"
+        "    func2(a)\n",
+        encoding="utf-8"
+    )
+
+    f2 = tmp_path / "f2.py"
+    f2.write_text(
+        "from f1 import func1\n"
+        "def func2(b):\n"
+        "    func1(b)\n",
+        encoding="utf-8"
+    )
+
+    analyzer = TaintAnalyzer()
+    # If circular call graph is circular, analyze_directory must terminate successfully!
+    analyzer.analyze_directory(tmp_path)
+
+    assert "func1" in analyzer.functions
+    assert "func2" in analyzer.functions
+
+

@@ -88,6 +88,7 @@ class BaseVCSAutomation:
 
         if not auto_confirm:
             import sys
+
             import typer
             from rich.console import Console
             console = Console()

@@ -12,6 +12,11 @@ from phoenixsec.models.finding import Finding, VulnerabilityType
 from phoenixsec.models.vulnerability import Severity
 
 
+@pytest.fixture(autouse=True)
+def setup_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test_gemini_key")
+
+
 @pytest.fixture
 def dummy_finding(tmp_path: Path) -> Finding:
     return Finding(
@@ -66,9 +71,8 @@ def test_generate_patch_missing_key(
     monkeypatch.delenv("PHOENIXSEC_AI_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
-    patcher = AIPatcher()
-    with pytest.raises(PhoenixSecError, match="Missing PHOENIXSEC_AI_KEY"):
-        patcher.generate_patch("print('vuln')", dummy_finding)
+    with pytest.raises(PhoenixSecError, match="Gemini API key not found"):
+        AIPatcher()
 
 
 def test_validate_patch_syntax_error(dummy_finding: Finding, tmp_path: Path) -> None:
@@ -152,6 +156,7 @@ def test_patch_with_fallback_rule_based_succeeds(
 
     # Instantiate AIPatcher and run fallback
     patcher = AIPatcher()
+    patcher._config.patching.require_human_approval = False
     success, patched_code, is_ai_patch = patcher.patch_with_fallback(file_path, [dummy_finding])
 
     assert success
@@ -196,6 +201,7 @@ def test_patch_with_fallback_ai_fallback_succeeds(
     mock_run.return_value = MagicMock(returncode=0)
 
     patcher = AIPatcher()
+    patcher._config.patching.require_human_approval = False
     success, patched_code, is_ai_patch = patcher.patch_with_fallback(file_path, [dummy_finding])
 
     assert success
@@ -234,6 +240,7 @@ def test_patch_with_fallback_ai_fallback_fails_and_rolls_back(
     mock_run.return_value = MagicMock(returncode=0)
 
     patcher = AIPatcher()
+    patcher._config.patching.require_human_approval = False
     success, patched_code, is_ai_patch = patcher.patch_with_fallback(file_path, [dummy_finding])
 
     assert not success
@@ -468,6 +475,7 @@ def test_patch_with_fallback_self_healing_success(
 
     from phoenixsec.rules.engine import EngineResult
     patcher = AIPatcher()
+    patcher._config.patching.require_human_approval = False
     mock_scan = MagicMock()
     mock_scan.return_value = EngineResult(file_path=str(file_path), language="python", findings=[])
     patcher._rule_engine.scan_code = mock_scan
@@ -478,5 +486,87 @@ def test_patch_with_fallback_self_healing_success(
     assert is_ai_patch is True
     assert patched_code == "def query(request):\n    pass"
     assert mock_urlopen.call_count == 2
+
+
+def test_query_ollama_gemini_model_error() -> None:
+    from phoenixsec.core.config import PhoenixSecConfig
+    config = PhoenixSecConfig()
+    config.patching.provider = "ollama"
+    config.patching.model = "gemini-1.5-flash"
+    
+    patcher = AIPatcher(config=config)
+    with pytest.raises(PhoenixSecError, match="Gemini models are not supported with the Ollama provider"):
+        patcher.generate_patch("print('vuln')", Finding(
+            vulnerability_type=VulnerabilityType.SQL_INJECTION,
+            severity=Severity.CRITICAL,
+            confidence_score=0.9,
+            recommendation="Use parameterized queries.",
+            file_path="app.py",
+            line_number=3,
+        ))
+
+
+@patch("sys.stdin.isatty", return_value=True)
+@patch("typer.confirm", return_value=False)
+def test_patch_with_fallback_declined_reverts_file(
+    mock_confirm: MagicMock, mock_isatty: MagicMock, dummy_finding: Finding, tmp_path: Path
+) -> None:
+    file_path = tmp_path / "app.py"
+    original_code = "print('original')"
+    file_path.write_text(original_code, encoding="utf-8")
+
+    from phoenixsec.rules.engine import EngineResult
+    patcher = AIPatcher()
+    patcher._config.patching.require_human_approval = True
+    
+    mock_patch = MagicMock(return_value=("print('patched')", "summary", [1]))
+    from phoenixsec.core.patcher import Patcher
+    with patch.object(Patcher, "patch", mock_patch):
+        mock_scan = MagicMock()
+        mock_scan.return_value = EngineResult(file_path=str(file_path), language="python", findings=[])
+        patcher._rule_engine.scan_code = mock_scan
+
+        success, patched_code, is_ai_patch = patcher.patch_with_fallback(file_path, [dummy_finding])
+
+        assert success is False
+        assert file_path.read_text(encoding="utf-8") == original_code
+
+
+def test_patch_with_fallback_require_human_approval_non_interactive(
+    dummy_finding: Finding, tmp_path: Path
+) -> None:
+    file_path = tmp_path / "app.py"
+    original_code = "print('original')"
+    file_path.write_text(original_code, encoding="utf-8")
+
+    from phoenixsec.rules.engine import EngineResult
+    
+    # Case A: require_human_approval is True -> should skip patching
+    patcher = AIPatcher()
+    patcher._config.patching.require_human_approval = True
+    
+    mock_patch = MagicMock(return_value=("print('patched')", "summary", [1]))
+    from phoenixsec.core.patcher import Patcher
+    with patch.object(Patcher, "patch", mock_patch):
+        mock_scan = MagicMock()
+        mock_scan.return_value = EngineResult(file_path=str(file_path), language="python", findings=[])
+        patcher._rule_engine.scan_code = mock_scan
+
+        success, patched_code, is_ai_patch = patcher.patch_with_fallback(file_path, [dummy_finding])
+        assert success is False
+        assert file_path.read_text(encoding="utf-8") == original_code
+
+    # Case B: require_human_approval is False -> should apply patch
+    patcher = AIPatcher()
+    patcher._config.patching.require_human_approval = False
+    
+    with patch.object(Patcher, "patch", mock_patch):
+        mock_scan = MagicMock()
+        mock_scan.return_value = EngineResult(file_path=str(file_path), language="python", findings=[])
+        patcher._rule_engine.scan_code = mock_scan
+
+        success, patched_code, is_ai_patch = patcher.patch_with_fallback(file_path, [dummy_finding])
+        assert success is True
+        assert file_path.read_text(encoding="utf-8") == "print('patched')"
 
 

@@ -16,6 +16,12 @@ from phoenixsec.models.report import Report
 from phoenixsec.models.vulnerability import Severity
 
 
+@pytest.fixture(autouse=True)
+def setup_api_key_and_approval(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test_gemini_key")
+    monkeypatch.setenv("PHOENIXSEC__PATCHING__REQUIRE_HUMAN_APPROVAL", "false")
+
+
 @pytest.fixture()
 def client() -> TestClient:
     return TestClient(app)

@@ -1,4 +1,3 @@
-import os
 import re
 import secrets
 from pathlib import Path
@@ -41,15 +40,15 @@ class MockCloudSecretRotator:
             return False, "Invalid line number."
 
         target_line = lines[finding.line_number - 1]
-        
+
         # Look for typical string assignments
         match = re.search(r'[\'"]([A-Za-z0-9_]{10,})[\'"]', target_line)
         if not match:
             return False, "Could not reliably extract secret value from line."
-            
+
         secret_value = match.group(1)
         provider = self.identify_provider(secret_value)
-        
+
         if not provider:
             return False, f"Could not identify cloud provider for secret: {secret_value[:4]}***"
 
@@ -58,7 +57,7 @@ class MockCloudSecretRotator:
         details.append(f"🔍 Identified {provider} credential in {finding.file_path}:{finding.line_number}")
         details.append(f"🌐 Initiating {provider} API connection (Simulated)...")
         details.append(f"❌ Revoking compromised credential: {secret_value[:4]}...{secret_value[-4:]}")
-        
+
         # Generate new mock key
         new_key = ""
         env_key = ""
@@ -77,7 +76,7 @@ class MockCloudSecretRotator:
         # Inject into .env
         env_path = self.workspace_root / ".env"
         env_entry = f"{env_key}={new_key}\n"
-        
+
         try:
             if env_path.exists():
                 content = env_path.read_text(encoding="utf-8")
@@ -90,7 +89,7 @@ class MockCloudSecretRotator:
                         f.write(env_entry)
             else:
                 env_path.write_text(env_entry, encoding="utf-8")
-            
+
             details.append(f"🔒 Automatically injected new credential into {env_path.name}")
         except Exception as e:
             details.append(f"⚠️ Failed to update .env file: {e}")

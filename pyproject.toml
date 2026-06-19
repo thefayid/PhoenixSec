@@ -31,6 +31,12 @@ dependencies = [
     "pygls>=1.3.1",
 ]
 
+[project.urls]
+Homepage = "https://github.com/phoenixsec/phoenixsec"
+Repository = "https://github.com/phoenixsec/phoenixsec"
+Issues = "https://github.com/phoenixsec/phoenixsec/issues"
+
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",

@@ -131,7 +131,18 @@ class TestFinding:
                 file_path="app.py",
             )
 
-    def test_line_number_zero_raises(self) -> None:
+    def test_line_number_zero_allowed(self) -> None:
+        f = Finding(
+            vulnerability_type=VulnerabilityType.XSS,
+            severity=Severity.LOW,
+            confidence_score=0.5,
+            recommendation="Fix it.",
+            file_path="app.py",
+            line_number=0,
+        )
+        assert f.line_number == 0
+
+    def test_line_number_negative_raises(self) -> None:
         with pytest.raises(ValueError, match="line_number"):
             Finding(
                 vulnerability_type=VulnerabilityType.XSS,
@@ -139,7 +150,7 @@ class TestFinding:
                 confidence_score=0.5,
                 recommendation="Fix it.",
                 file_path="app.py",
-                line_number=0,
+                line_number=-1,
             )
 
     def test_invalid_severity_type_raises(self) -> None:
