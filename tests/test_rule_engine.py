@@ -671,12 +671,12 @@ class TestRuleEngine:
     ) -> None:
         registry.register(EvalRule)
         (tmp_path / "a.py").write_text('eval("x")\n', encoding="utf-8")
-        
+
         # Create an excluded directory
         excluded = tmp_path / "node_modules"
         excluded.mkdir()
         (excluded / "b.py").write_text('eval("x")\n', encoding="utf-8")
-        
+
         # Another excluded directory
         excluded2 = tmp_path / "dist"
         excluded2.mkdir()

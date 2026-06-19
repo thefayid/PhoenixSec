@@ -69,14 +69,25 @@ select = [
     "ANN", # type annotations
 ]
 ignore = [
-    "ANN101", # missing self annotation — unnecessary
-    "ANN102", # missing cls annotation
+    "E501",   # line-too-long
+    "B904",   # raise-without-from-inside-except
+    "B017",   # assert-raises-exception
+    "E741",   # ambiguous-variable-name
+    "SIM102", # collapsible-if
+    "SIM117", # multiple-with-statements
+    "SIM105", # suppressible-exception
+    "ANN001", # missing-type-function-argument
+    "ANN201", # missing-return-type-undocumented-public-function
+    "ANN202", # missing-return-type-private-function
+    "ANN401", # any-type
+    "E402",   # module-import-not-at-top-of-file
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["ANN", "E501"]
 "benchmarks/**/*.py" = ["ANN", "E501"]
 "samples/**/*.py" = ["ANN", "E501", "E402", "F821"]
+"src/phoenixsec/rules/__init__.py" = ["F401"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["phoenixsec"]

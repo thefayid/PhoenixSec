@@ -196,8 +196,8 @@ def test_analyze_fp_endpoint(mock_analyze: MagicMock, client: TestClient) -> Non
             "vulnerability_type": "SQL Injection",
             "severity": "CRITICAL",
             "file_path": "test.py",
-            "line_number": 1
-        }
+            "line_number": 1,
+        },
     }
     response = client.post("/api/analyze-fp", json=payload)
     assert response.status_code == 200

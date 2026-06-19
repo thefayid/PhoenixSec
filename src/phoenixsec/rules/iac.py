@@ -15,6 +15,7 @@ from phoenixsec.rules.registry import rule
 # Dockerfile Rules
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 @rule
 class DockerfileUnpinnedTagRule(BaseRule):
     """Detect unpinned or ':latest' base image tags in Dockerfiles.
@@ -133,7 +134,7 @@ class DockerfileUserRootRule(BaseRule):
             if match:
                 last_user_line = idx
                 username = match.group(1).lower()
-                is_root = (username == "root")
+                is_root = username == "root"
 
         # If no USER was ever specified, or the last user was root
         if last_user_line is None:
@@ -218,6 +219,7 @@ class DockerfileEnvSecretsRule(BaseRule):
 # ══════════════════════════════════════════════════════════════════════════════
 # Terraform Rules
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 @rule
 class TerraformOpenIngressRule(BaseRule):
@@ -329,7 +331,9 @@ class TerraformPublicS3BucketRule(BaseRule):
         if not code.strip():
             return findings
 
-        acl_pattern = re.compile(r"acl\s*=\s*[\"'](public-read|public-read-write)[\"']", re.IGNORECASE)
+        acl_pattern = re.compile(
+            r"acl\s*=\s*[\"'](public-read|public-read-write)[\"']", re.IGNORECASE
+        )
 
         for idx, line in enumerate(code.splitlines(), start=1):
             match = acl_pattern.search(line)

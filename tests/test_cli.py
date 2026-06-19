@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from phoenixsec.cli.main import app
@@ -181,7 +182,9 @@ def test_cli_report_command(tmp_path: Path) -> None:
 
 
 @patch("phoenixsec.core.github_automation.GitHubPRAutomation.create_pull_request")
-def test_cli_scan_with_patch_option(mock_create_pr: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_scan_with_patch_option(
+    mock_create_pr: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The scan command with --patch option should patch file and open a PR."""
     monkeypatch.setenv("GEMINI_API_KEY", "test_gemini_key")
     monkeypatch.setenv("PHOENIXSEC__PATCHING__REQUIRE_HUMAN_APPROVAL", "false")
@@ -234,6 +237,7 @@ def test_cli_scan_changed_files(tmp_path: Path) -> None:
     assert result_clean.exit_code == 0
     assert "No changed files detected in Git" in result_clean.stdout
 
+
 def test_cli_watch_command_discovers_changes(tmp_path: Path) -> None:
     """The watch command should detect added/modified files and scan them."""
     # Create target directory
@@ -252,7 +256,9 @@ def test_cli_watch_command_discovers_changes(tmp_path: Path) -> None:
         if sleep_count == 1:
             # First loop iteration: simulate adding a vulnerable file
             vuln_file = target_dir / "vuln.py"
-            vuln_file.write_text("cursor.execute('SELECT * FROM t WHERE id=' + uid)\n", encoding="utf-8")
+            vuln_file.write_text(
+                "cursor.execute('SELECT * FROM t WHERE id=' + uid)\n", encoding="utf-8"
+            )
         elif sleep_count == 2:
             # Second loop iteration: exit loop
             raise KeyboardInterrupt()

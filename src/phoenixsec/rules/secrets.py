@@ -85,7 +85,11 @@ def verify_secret(secret_type: str, value: str) -> bool:
     Returns True if verified active, False otherwise.
     """
     import os
-    if os.environ.get("PHOENIXSEC_OFFLINE") == "1" or os.environ.get("PHOENIXSEC_DISABLE_SECRET_VALIDATION") == "1":
+
+    if (
+        os.environ.get("PHOENIXSEC_OFFLINE") == "1"
+        or os.environ.get("PHOENIXSEC_DISABLE_SECRET_VALIDATION") == "1"
+    ):
         return False
 
     secret_type_lower = secret_type.lower()
@@ -94,9 +98,10 @@ def verify_secret(secret_type: str, value: str) -> bool:
     if "github" in secret_type_lower or value.startswith("ghp_") or value.startswith("github_pat_"):
         import urllib.error
         import urllib.request
+
         req = urllib.request.Request(
             "https://api.github.com/user",
-            headers={"Authorization": f"token {value}", "User-Agent": "PhoenixSec-Scanner"}
+            headers={"Authorization": f"token {value}", "User-Agent": "PhoenixSec-Scanner"},
         )
         try:
             with urllib.request.urlopen(req, timeout=1.5) as response:
@@ -106,12 +111,17 @@ def verify_secret(secret_type: str, value: str) -> bool:
             return False
 
     # 2. OpenAI API Verification
-    elif "openai" in secret_type_lower or "generic key" in secret_type_lower or value.startswith("sk-"):
+    elif (
+        "openai" in secret_type_lower
+        or "generic key" in secret_type_lower
+        or value.startswith("sk-")
+    ):
         import urllib.error
         import urllib.request
+
         req = urllib.request.Request(
             "https://api.openai.com/v1/models",
-            headers={"Authorization": f"Bearer {value}", "User-Agent": "PhoenixSec-Scanner"}
+            headers={"Authorization": f"Bearer {value}", "User-Agent": "PhoenixSec-Scanner"},
         )
         try:
             with urllib.request.urlopen(req, timeout=1.5) as response:
@@ -317,27 +327,26 @@ class HardcodedSecretsRule(BaseRule):
                     type=match.secret_type,
                 )
 
-                if score >= 0.50:
-                    if match.line_number not in seen_lines:
-                        seen_lines.add(match.line_number)
+                if score >= 0.50 and match.line_number not in seen_lines:
+                    seen_lines.add(match.line_number)
 
-                        # Active validation check
-                        is_active = verify_secret(match.secret_type, match.secret_value)
+                    # Active validation check
+                    is_active = verify_secret(match.secret_type, match.secret_value)
 
-                        sink_msg = "Hardcoded value in variable assignment"
-                        if is_active:
-                            sink_msg = "Active and verified hardcoded secret via API ping"
-                            score = 1.0
+                    sink_msg = "Hardcoded value in variable assignment"
+                    if is_active:
+                        sink_msg = "Active and verified hardcoded secret via API ping"
+                        score = 1.0
 
-                        findings.append(
-                            self._make_finding(
-                                file_path,
-                                line_number=match.line_number,
-                                snippet=match.matched_line.strip(),
-                                source=match.secret_type,
-                                sink=sink_msg,
-                                confidence=score,
-                            )
+                    findings.append(
+                        self._make_finding(
+                            file_path,
+                            line_number=match.line_number,
+                            snippet=match.matched_line.strip(),
+                            source=match.secret_type,
+                            sink=sink_msg,
+                            confidence=score,
                         )
+                    )
 
         return findings

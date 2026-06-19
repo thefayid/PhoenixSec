@@ -23,9 +23,10 @@ log = get_logger(__name__)
 class AIPatcher:
     """Fallback patch generation using LLM API, with verification and rollback."""
 
-    def __init__(self, rule_engine: RuleEngine | None = None, config = None) -> None:
+    def __init__(self, rule_engine: RuleEngine | None = None, config=None) -> None:
         self._rule_engine = rule_engine or RuleEngine()
         from phoenixsec.core.config import load_config
+
         self._config = config or load_config()
         if self._config.patching.provider.lower() == "gemini":
             api_key = os.environ.get("PHOENIXSEC_AI_KEY") or os.environ.get("GEMINI_API_KEY")
@@ -98,7 +99,11 @@ class AIPatcher:
             )
 
         base_url = "https://generativelanguage.googleapis.com/v1beta/models"
-        model_name = self._config.patching.model if "gemini" in self._config.patching.model else "gemini-1.5-flash"
+        model_name = (
+            self._config.patching.model
+            if "gemini" in self._config.patching.model
+            else "gemini-1.5-flash"
+        )
         url = f"{base_url}/{model_name}:generateContent?key={api_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -189,7 +194,6 @@ class AIPatcher:
         if provider == "ollama":
             return self._query_ollama(prompt)
         return self._query_gemini(prompt)
-
 
     def analyze_false_positive(self, code: str, finding: Finding) -> tuple[bool, str]:
         """Analyze if a finding is a false positive using the Google Gemini API.
@@ -366,9 +370,15 @@ class AIPatcher:
                     f"vulnerability in {file_path.name}."
                 )
                 if error_container is not None:
-                    desc = failed_finding.vulnerability_type if failed_finding else "original vulnerability"
+                    desc = (
+                        failed_finding.vulnerability_type
+                        if failed_finding
+                        else "original vulnerability"
+                    )
                     line = failed_finding.line_number if failed_finding else "N/A"
-                    error_container.append(f"Vulnerability {desc} was still detected at line {line}")
+                    error_container.append(
+                        f"Vulnerability {desc} was still detected at line {line}"
+                    )
                 return False
 
             # Check if new high/critical issues introduced
@@ -529,7 +539,9 @@ class AIPatcher:
                             patched = self.generate_patch(last_patched, finding)
                         else:
                             error_reason = errors[-1] if errors else "unknown failure"
-                            log.info(f"Self-healing: Attempt {attempt} to fix previous patch failure: {error_reason}")
+                            log.info(
+                                f"Self-healing: Attempt {attempt} to fix previous patch failure: {error_reason}"
+                            )
                             heal_prompt = (
                                 f"Your previous patched code has failed validation check: {error_reason}\n\n"
                                 f"Here is the original code:\n"
@@ -549,7 +561,9 @@ class AIPatcher:
                                 patched = self._query_gemini(heal_prompt)
 
                         errors = []
-                        val_ok = self.validate_patch(original_code, patched, file_path, finding, error_container=errors)
+                        val_ok = self.validate_patch(
+                            original_code, patched, file_path, finding, error_container=errors
+                        )
                         if val_ok:
                             break
 
@@ -575,6 +589,7 @@ class AIPatcher:
         if success and patched_code is not None:
             # Interactive confirmation prompt showing unified colorized diff using rich
             import sys
+
             if not auto_confirm and sys.stdin.isatty():
                 import difflib
 
@@ -583,26 +598,36 @@ class AIPatcher:
                 from rich.syntax import Syntax
 
                 console = Console()
-                diff_lines = list(difflib.unified_diff(
-                    original_code.splitlines(keepends=True),
-                    patched_code.splitlines(keepends=True),
-                    fromfile=f"a/{file_path.name}",
-                    tofile=f"b/{file_path.name}"
-                ))
+                diff_lines = list(
+                    difflib.unified_diff(
+                        original_code.splitlines(keepends=True),
+                        patched_code.splitlines(keepends=True),
+                        fromfile=f"a/{file_path.name}",
+                        tofile=f"b/{file_path.name}",
+                    )
+                )
 
                 if diff_lines:
-                    console.print(f"\n[bold cyan]Proposed changes for {file_path.name}:[/bold cyan]")
+                    console.print(
+                        f"\n[bold cyan]Proposed changes for {file_path.name}:[/bold cyan]"
+                    )
                     diff_text = "".join(diff_lines)
-                    console.print(Syntax(diff_text, "diff", theme="monokai", background_color="default"))
+                    console.print(
+                        Syntax(diff_text, "diff", theme="monokai", background_color="default")
+                    )
                     console.print("")
 
                     try:
                         if not typer.confirm("Apply this patch?"):
-                            console.print(f"[yellow]Patch for {file_path.name} declined by user.[/yellow]")
+                            console.print(
+                                f"[yellow]Patch for {file_path.name} declined by user.[/yellow]"
+                            )
                             file_path.write_text(original_code, encoding="utf-8")
                             return False, original_code, False
                     except typer.Abort:
-                        console.print(f"\n[yellow]Patch for {file_path.name} declined by user.[/yellow]")
+                        console.print(
+                            f"\n[yellow]Patch for {file_path.name} declined by user.[/yellow]"
+                        )
                         file_path.write_text(original_code, encoding="utf-8")
                         return False, original_code, False
             elif not auto_confirm:

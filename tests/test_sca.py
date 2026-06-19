@@ -131,11 +131,7 @@ def test_scan_python_pyproject(mock_run, mock_which, tmp_path):
 
     # Create pyproject.toml
     pyproject_file = tmp_path / "pyproject.toml"
-    pyproject_file.write_text(
-        "[project]\n"
-        'dependencies = ["flask==1.1.1"]\n',
-        encoding="utf-8"
-    )
+    pyproject_file.write_text('[project]\ndependencies = ["flask==1.1.1"]\n', encoding="utf-8")
 
     # Mock subprocess.run
     mock_res = MagicMock()
@@ -152,7 +148,7 @@ def test_scan_python_pyproject(mock_run, mock_which, tmp_path):
     assert f.file_path == str(pyproject_file)
     assert f.vulnerability_type == VulnerabilityType.DEPENDENCY_VULNERABILITY
     assert "flask" in f.code_snippet
-    
+
     # Assert pip-audit was called with requirements flag -r and the tmp filename
     mock_run.assert_called_once()
     called_args = mock_run.call_args[0][0]
@@ -160,4 +156,3 @@ def test_scan_python_pyproject(mock_run, mock_which, tmp_path):
     # The tmp file should have been cleaned up
     tmp_files = list(tmp_path.glob(".tmp_req_*"))
     assert len(tmp_files) == 0
-

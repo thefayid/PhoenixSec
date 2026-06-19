@@ -187,38 +187,39 @@ def test_merge_and_deduplicate_different_family_and_cwe_no_boost() -> None:
 def test_semgrep_bin_caching(monkeypatch) -> None:
     # Clear cache first
     SemgrepScanner._cached_semgrep_bin = None
-    
+
     import pathlib
+
     original_is_file = pathlib.Path.is_file
-    
+
     def mock_is_file(self):
         if "semgrep" in self.name:
             return False
         return original_is_file(self)
-        
+
     monkeypatch.setattr(pathlib.Path, "is_file", mock_is_file)
-    
+
     import shutil
+
     call_count = 0
     original_which = shutil.which
-    
+
     def mock_which(cmd):
         nonlocal call_count
         if cmd == "semgrep":
             call_count += 1
             return "/path/to/mocked/semgrep"
         return original_which(cmd)
-        
+
     monkeypatch.setattr(shutil, "which", mock_which)
-    
+
     scanner = SemgrepScanner()
     # First call
     path1 = scanner.get_semgrep_bin()
     assert path1 == "/path/to/mocked/semgrep"
     assert call_count == 1
-    
+
     # Second call - should return cached and not call shutil.which again
     path2 = scanner.get_semgrep_bin()
     assert path2 == "/path/to/mocked/semgrep"
     assert call_count == 1
-

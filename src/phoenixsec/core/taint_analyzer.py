@@ -54,7 +54,12 @@ def _get_call_name(node: ast.Call) -> str | None:
 def _is_direct_source(node: ast.AST) -> bool:
     """Check if the AST node represents a direct taint source (references request, req, GET, etc.)."""
     for child in ast.walk(node):
-        if isinstance(child, ast.Name) and child.id in {"request", "req", "GET", "POST", "args", "input", "params"} or isinstance(child, ast.Attribute) and child.attr in {"request", "req", "GET", "POST", "args", "input", "params"}:
+        if (
+            isinstance(child, ast.Name)
+            and child.id in {"request", "req", "GET", "POST", "args", "input", "params"}
+            or isinstance(child, ast.Attribute)
+            and child.attr in {"request", "req", "GET", "POST", "args", "input", "params"}
+        ):
             return True
     return False
 
@@ -77,12 +82,16 @@ def _is_formatted_expr(expr_node: ast.AST) -> bool:
 class FunctionDef:
     """Represents a static function definition in the codebase."""
 
-    def __init__(self, name: str, file_path: str, params: list[str], ast_node: ast.FunctionDef | None = None) -> None:
+    def __init__(
+        self, name: str, file_path: str, params: list[str], ast_node: ast.FunctionDef | None = None
+    ) -> None:
         self.name = name
         self.file_path = file_path
         self.params = params
         self.sink_params: set[int] = set()  # Indices of parameters that flow into a sink
-        self.sink_types: dict[int, set[VulnerabilityType]] = {}  # param index -> set of vulnerability types
+        self.sink_types: dict[
+            int, set[VulnerabilityType]
+        ] = {}  # param index -> set of vulnerability types
         self.return_params: set[int] = set()  # Indices of parameters returned
         self.ast_node = ast_node
 
@@ -100,6 +109,7 @@ class TaintAnalyzer:
             return
 
         from phoenixsec.core.config import load_config
+
         try:
             config = load_config()
             exclude_dirs = set(config.scanning.exclude_dirs)
@@ -155,28 +165,40 @@ class TaintAnalyzer:
                                         if call_name in ("execute", "query", "Exec"):
                                             if _is_formatted_expr(arg):
                                                 func_def.sink_params.add(idx)
-                                                func_def.sink_types.setdefault(idx, set()).add(VulnerabilityType.SQL_INJECTION)
+                                                func_def.sink_types.setdefault(idx, set()).add(
+                                                    VulnerabilityType.SQL_INJECTION
+                                                )
                                         elif call_name in ("system", "run", "Popen", "Command"):
                                             func_def.sink_params.add(idx)
-                                            func_def.sink_types.setdefault(idx, set()).add(VulnerabilityType.COMMAND_INJECTION)
+                                            func_def.sink_types.setdefault(idx, set()).add(
+                                                VulnerabilityType.COMMAND_INJECTION
+                                            )
                                         elif call_name in ("open", "join", "Path"):
                                             if _is_formatted_expr(arg):
                                                 func_def.sink_params.add(idx)
-                                                func_def.sink_types.setdefault(idx, set()).add(VulnerabilityType.PATH_TRAVERSAL)
+                                                func_def.sink_types.setdefault(idx, set()).add(
+                                                    VulnerabilityType.PATH_TRAVERSAL
+                                                )
 
                                 for kw in stmt.keywords:
                                     if param in _get_referenced_vars(kw.value):
                                         if call_name in ("execute", "query", "Exec"):
                                             if _is_formatted_expr(kw.value):
                                                 func_def.sink_params.add(idx)
-                                                func_def.sink_types.setdefault(idx, set()).add(VulnerabilityType.SQL_INJECTION)
+                                                func_def.sink_types.setdefault(idx, set()).add(
+                                                    VulnerabilityType.SQL_INJECTION
+                                                )
                                         elif call_name in ("system", "run", "Popen", "Command"):
                                             func_def.sink_params.add(idx)
-                                            func_def.sink_types.setdefault(idx, set()).add(VulnerabilityType.COMMAND_INJECTION)
+                                            func_def.sink_types.setdefault(idx, set()).add(
+                                                VulnerabilityType.COMMAND_INJECTION
+                                            )
                                         elif call_name in ("open", "join", "Path"):
                                             if _is_formatted_expr(kw.value):
                                                 func_def.sink_params.add(idx)
-                                                func_def.sink_types.setdefault(idx, set()).add(VulnerabilityType.PATH_TRAVERSAL)
+                                                func_def.sink_types.setdefault(idx, set()).add(
+                                                    VulnerabilityType.PATH_TRAVERSAL
+                                                )
 
                         # Check if returned
                         if isinstance(stmt, ast.Return) and stmt.value:
@@ -241,7 +263,11 @@ class TaintAnalyzer:
                         for child in ast.walk(stmt):
                             if isinstance(child, ast.Call):
                                 call_name = _get_call_name(child)
-                                if call_name and call_name in self.functions and call_name != func_name:
+                                if (
+                                    call_name
+                                    and call_name in self.functions
+                                    and call_name != func_name
+                                ):
                                     other_def = self.functions[call_name]
                                     # Check arguments passed to other_def
                                     for arg_idx, arg in enumerate(child.args):
@@ -252,11 +278,15 @@ class TaintAnalyzer:
                                                 if idx not in func_def.sink_params:
                                                     func_def.sink_params.add(idx)
                                                     changed = True
-                                                other_types = other_def.sink_types.get(arg_idx, set())
+                                                other_types = other_def.sink_types.get(
+                                                    arg_idx, set()
+                                                )
                                                 if not other_types:
                                                     other_types = {VulnerabilityType.SQL_INJECTION}
                                                 for vt in other_types:
-                                                    if vt not in func_def.sink_types.setdefault(idx, set()):
+                                                    if vt not in func_def.sink_types.setdefault(
+                                                        idx, set()
+                                                    ):
                                                         func_def.sink_types[idx].add(vt)
                                                         changed = True
 
@@ -268,7 +298,9 @@ class TaintAnalyzer:
                                                             if target.id not in local_tainted:
                                                                 local_tainted.add(target.id)
                                                                 changed = True
-                                                elif isinstance(stmt, (ast.AnnAssign, ast.AugAssign)):
+                                                elif isinstance(
+                                                    stmt, (ast.AnnAssign, ast.AugAssign)
+                                                ):
                                                     if isinstance(stmt.target, ast.Name):
                                                         if stmt.target.id not in local_tainted:
                                                             local_tainted.add(stmt.target.id)
@@ -283,10 +315,7 @@ class TaintAnalyzer:
                                     changed = True
 
     def _trace_taint_in_scope(
-        self,
-        nodes: list[ast.stmt],
-        file_path: Path | str,
-        findings: list[Finding]
+        self, nodes: list[ast.stmt], file_path: Path | str, findings: list[Finding]
     ) -> None:
         tainted_vars: dict[str, str] = {}  # var_name -> source_expression
 

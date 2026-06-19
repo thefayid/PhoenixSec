@@ -15,10 +15,7 @@ def load_custom_rules(rules_dir: Path | str | None = None) -> None:
     Rules must be subclasses of BaseRule and decorated with @rule to register
     themselves automatically.
     """
-    if rules_dir is None:
-        rules_dir = Path(".phoenixsec/rules")
-    else:
-        rules_dir = Path(rules_dir)
+    rules_dir = Path(".phoenixsec/rules") if rules_dir is None else Path(rules_dir)
 
     if not rules_dir.is_dir():
         return

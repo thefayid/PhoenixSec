@@ -32,9 +32,7 @@ class BaseVCSAutomation:
         """Print warning when required credentials are missing."""
         raise NotImplementedError
 
-    def check_existing_pr(
-        self, branch_name: str, owner: str, repo: str, token: str
-    ) -> str | None:
+    def check_existing_pr(self, branch_name: str, owner: str, repo: str, token: str) -> str | None:
         """Query the remote API to check if an open PR/MR already exists for this branch."""
         raise NotImplementedError
 
@@ -91,6 +89,7 @@ class BaseVCSAutomation:
 
             import typer
             from rich.console import Console
+
             console = Console()
 
             if not sys.stdin.isatty():
@@ -104,7 +103,9 @@ class BaseVCSAutomation:
                 "[bold yellow]⚠️ This will create a new git branch and commit in this repository.[/bold yellow]"
             )
             try:
-                if not typer.confirm(f"Do you want to proceed with {self.platform_name} PR automation?"):
+                if not typer.confirm(
+                    f"Do you want to proceed with {self.platform_name} PR automation?"
+                ):
                     console.print("[yellow]PR automation cancelled by user.[/yellow]")
                     return None
             except typer.Abort:
@@ -112,8 +113,8 @@ class BaseVCSAutomation:
                 return None
 
         # Create branch name
-        vuln_slug = re.sub(r"[^a-zA-Z0-9]", "-", vulnerability_type.lower())[:50].strip('-')
-        file_slug = re.sub(r"[^a-zA-Z0-9]", "-", file_name.lower())[:30].strip('-')
+        vuln_slug = re.sub(r"[^a-zA-Z0-9]", "-", vulnerability_type.lower())[:50].strip("-")
+        file_slug = re.sub(r"[^a-zA-Z0-9]", "-", file_name.lower())[:30].strip("-")
         content_hash = hashlib.sha256(patched_code.encode("utf-8")).hexdigest()[:7]
         branch_prefix = "phoenixsec-ai-fix" if ai_generated else "phoenixsec-fix"
         branch_name = f"{branch_prefix}-{vuln_slug}-{file_slug}-{content_hash}"
@@ -141,9 +142,16 @@ class BaseVCSAutomation:
                     subprocess.run(["git", "init"], cwd=cwd, check=True, capture_output=True)
                     # Make initial commit if newly initialized
                     subprocess.run(["git", "add", "."], cwd=cwd, check=True, capture_output=True)
-                    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=cwd, check=True, capture_output=True)
+                    subprocess.run(
+                        ["git", "commit", "-m", "Initial commit"],
+                        cwd=cwd,
+                        check=True,
+                        capture_output=True,
+                    )
                 except subprocess.CalledProcessError as e:
-                    raise PhoenixSecError(f"Could not initialize git repository: {e.stderr.decode().strip()}") from e
+                    raise PhoenixSecError(
+                        f"Could not initialize git repository: {e.stderr.decode().strip()}"
+                    ) from e
 
             # Configure basic git user name and email locally if not set
             subprocess.run(
@@ -204,6 +212,7 @@ class BaseVCSAutomation:
                 err_msg = e.stderr.decode().strip()
                 log.warning(f"Git push failed (possibly no remote origin): {err_msg}")
                 from rich.console import Console
+
                 console = Console()
                 console.print(
                     f"[yellow]Fix committed locally on branch {branch_name}, but could not push to remote 'origin' "
@@ -262,15 +271,14 @@ class GitHubAutomation(BaseVCSAutomation):
 
     def _print_credential_warning(self) -> None:
         from rich.console import Console
+
         console = Console()
         console.print(
             "[yellow]Patch applied locally. Set PHOENIXSEC_GITHUB_TOKEN, PHOENIXSEC_GITHUB_OWNER, "
             "and PHOENIXSEC_GITHUB_REPO to enable automatic PR creation.[/yellow]"
         )
 
-    def check_existing_pr(
-        self, branch_name: str, owner: str, repo: str, token: str
-    ) -> str | None:
+    def check_existing_pr(self, branch_name: str, owner: str, repo: str, token: str) -> str | None:
         try:
             pulls_url = f"https://api.github.com/repos/{owner}/{repo}/pulls?state=open"
             headers = {
@@ -422,17 +430,17 @@ class GitLabAutomation(BaseVCSAutomation):
 
     def _print_credential_warning(self) -> None:
         from rich.console import Console
+
         console = Console()
         console.print(
             "[yellow]Patch applied locally. Set PHOENIXSEC_GITLAB_TOKEN, PHOENIXSEC_GITLAB_OWNER, "
             "and PHOENIXSEC_GITLAB_REPO to enable automatic GitLab MR creation.[/yellow]"
         )
 
-    def check_existing_pr(
-        self, branch_name: str, owner: str, repo: str, token: str
-    ) -> str | None:
+    def check_existing_pr(self, branch_name: str, owner: str, repo: str, token: str) -> str | None:
         try:
             import urllib.parse
+
             project_path = f"{owner}/{repo}"
             encoded_path = urllib.parse.quote_plus(project_path)
             url = f"https://gitlab.com/api/v4/projects/{encoded_path}/merge_requests?state=opened&source_branch={branch_name}"
@@ -460,6 +468,7 @@ class GitLabAutomation(BaseVCSAutomation):
         token: str,
     ) -> str | None:
         import urllib.parse
+
         project_path = f"{owner}/{repo}"
         encoded_path = urllib.parse.quote_plus(project_path)
         url = f"https://gitlab.com/api/v4/projects/{encoded_path}/merge_requests"
@@ -492,12 +501,11 @@ class GitLabAutomation(BaseVCSAutomation):
     ) -> int:
         token, owner, repo = self.resolve_credentials(token, owner, repo)
         if not token or not owner or not repo:
-            log.warning(
-                "GitLab owner, repo, or token not set. Skipping posting GitLab comments."
-            )
+            log.warning("GitLab owner, repo, or token not set. Skipping posting GitLab comments.")
             return 0
 
         import urllib.parse
+
         project_path = f"{owner}/{repo}"
         encoded_path = urllib.parse.quote_plus(project_path)
         headers = {
@@ -531,9 +539,7 @@ class GitLabAutomation(BaseVCSAutomation):
                 f"*PhoenixSec Static Analysis Pipeline*"
             )
 
-            payload = {
-                "body": f"**File:** `{rel_path}` Line {f.line_number}\n\n{comment_body}"
-            }
+            payload = {"body": f"**File:** `{rel_path}` Line {f.line_number}\n\n{comment_body}"}
 
             try:
                 url = f"https://gitlab.com/api/v4/projects/{encoded_path}/merge_requests/{pr_number}/notes"
@@ -558,24 +564,35 @@ class BitbucketAutomation(BaseVCSAutomation):
     def resolve_credentials(
         self, token: str | None, owner: str | None, repo: str | None
     ) -> tuple[str | None, str | None, str | None]:
-        token = token or os.environ.get("PHOENIXSEC_BITBUCKET_TOKEN") or os.environ.get("BITBUCKET_TOKEN")
-        owner = owner or os.environ.get("PHOENIXSEC_BITBUCKET_OWNER") or os.environ.get("BITBUCKET_OWNER")
-        repo = repo or os.environ.get("PHOENIXSEC_BITBUCKET_REPO") or os.environ.get("BITBUCKET_REPO")
+        token = (
+            token
+            or os.environ.get("PHOENIXSEC_BITBUCKET_TOKEN")
+            or os.environ.get("BITBUCKET_TOKEN")
+        )
+        owner = (
+            owner
+            or os.environ.get("PHOENIXSEC_BITBUCKET_OWNER")
+            or os.environ.get("BITBUCKET_OWNER")
+        )
+        repo = (
+            repo or os.environ.get("PHOENIXSEC_BITBUCKET_REPO") or os.environ.get("BITBUCKET_REPO")
+        )
         return token, owner, repo
 
     def _print_credential_warning(self) -> None:
         from rich.console import Console
+
         console = Console()
         console.print(
             "[yellow]Patch applied locally. Set PHOENIXSEC_BITBUCKET_TOKEN, PHOENIXSEC_BITBUCKET_OWNER, "
             "and PHOENIXSEC_BITBUCKET_REPO to enable automatic Bitbucket PR creation.[/yellow]"
         )
 
-    def check_existing_pr(
-        self, branch_name: str, owner: str, repo: str, token: str
-    ) -> str | None:
+    def check_existing_pr(self, branch_name: str, owner: str, repo: str, token: str) -> str | None:
         try:
-            url = f"https://api.bitbucket.org/2.0/repositories/{owner}/{repo}/pullrequests?state=OPEN"
+            url = (
+                f"https://api.bitbucket.org/2.0/repositories/{owner}/{repo}/pullrequests?state=OPEN"
+            )
             headers = {
                 "Authorization": f"Bearer {token}",
                 "User-Agent": "PhoenixSec-Bot",
@@ -610,16 +627,8 @@ class BitbucketAutomation(BaseVCSAutomation):
         payload = {
             "title": title,
             "description": body,
-            "source": {
-                "branch": {
-                    "name": branch_name
-                }
-            },
-            "destination": {
-                "branch": {
-                    "name": base_branch
-                }
-            }
+            "source": {"branch": {"name": branch_name}},
+            "destination": {"branch": {"name": base_branch}},
         }
         req = urllib.request.Request(
             url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST"
@@ -677,13 +686,8 @@ class BitbucketAutomation(BaseVCSAutomation):
 
             # Post inline comment in Bitbucket
             payload = {
-                "content": {
-                    "raw": comment_body
-                },
-                "inline": {
-                    "path": rel_path,
-                    "to": f.line_number
-                }
+                "content": {"raw": comment_body},
+                "inline": {"path": rel_path, "to": f.line_number},
             }
 
             try:
@@ -703,7 +707,7 @@ class BitbucketAutomation(BaseVCSAutomation):
 class GitHubPRAutomation:
     """Automates Git branch, commit, push, and PR/MR creation for patches (GitHub, GitLab, or Bitbucket)."""
 
-    def __init__(self, provider: str | None = None):
+    def __init__(self, provider: str | None = None) -> None:
         self._provider = provider
         self._impl = None
 

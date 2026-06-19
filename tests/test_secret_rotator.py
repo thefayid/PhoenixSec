@@ -1,5 +1,7 @@
-import pytest
 from pathlib import Path
+
+import pytest
+
 from phoenixsec.core.secret_rotator import MockCloudSecretRotator
 from phoenixsec.models.finding import Finding, VulnerabilityType
 from phoenixsec.models.vulnerability import Severity
@@ -27,12 +29,12 @@ def test_revoke_and_rotate_aws(rotator: MockCloudSecretRotator) -> None:
         file_path="app.py",
         line_number=1,
     )
-    
+
     success, details = rotator.revoke_and_rotate(finding, code_content)
     assert success is True
     assert "Identified AWS credential" in details
     assert "Provisioned new AWS credential" in details
-    
+
     env_file = rotator.workspace_root / ".env"
     assert env_file.exists()
     assert "AWS_ACCESS_KEY_ID=AKIA" in env_file.read_text()
@@ -48,7 +50,7 @@ def test_revoke_and_rotate_invalid_type(rotator: MockCloudSecretRotator) -> None
         file_path="app.py",
         line_number=1,
     )
-    
+
     success, details = rotator.revoke_and_rotate(finding, code_content)
     assert success is False
     assert details == "Not a hardcoded secret."

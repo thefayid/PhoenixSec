@@ -75,7 +75,9 @@ class SemgrepScanner:
         rules_path = Path(__file__).parent.parent / "rules" / "semgrep_rules.yaml"
 
         if not rules_path.is_file():
-            log.warning(f"Semgrep rules file not found — create one at {rules_path} or install PhoenixSec properly")
+            log.warning(
+                f"Semgrep rules file not found — create one at {rules_path} or install PhoenixSec properly"
+            )
             return []
 
         cmd = [
@@ -229,7 +231,19 @@ class SemgrepScanner:
                     # Extract rule family from rule_id
                     def get_rule_family(rule_id: str) -> str:
                         rid = rule_id.upper()
-                        for fam in ("SQLI", "CMD", "SECRET", "XSS", "SSRF", "PT", "DESER", "CRYPTO", "XXE", "NOSQL", "CONFIG"):
+                        for fam in (
+                            "SQLI",
+                            "CMD",
+                            "SECRET",
+                            "XSS",
+                            "SSRF",
+                            "PT",
+                            "DESER",
+                            "CRYPTO",
+                            "XXE",
+                            "NOSQL",
+                            "CONFIG",
+                        ):
                             if fam in rid:
                                 return fam
                         return rid

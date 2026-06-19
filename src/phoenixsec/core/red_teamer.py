@@ -34,7 +34,11 @@ class AgenticRedTeamer:
             )
 
         base_url = "https://generativelanguage.googleapis.com/v1beta/models"
-        model_name = self._config.red_teamer.model if "gemini" in self._config.red_teamer.model else "gemini-1.5-flash"
+        model_name = (
+            self._config.red_teamer.model
+            if "gemini" in self._config.red_teamer.model
+            else "gemini-1.5-flash"
+        )
         url = f"{base_url}/{model_name}:generateContent?key={api_key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -123,12 +127,13 @@ class AgenticRedTeamer:
 
             # Run pytest
             import sys
+
             result = subprocess.run(
                 [sys.executable, "-m", "pytest", str(test_file_path), "-v"],
                 cwd=str(temp_dir),
                 capture_output=True,
                 text=True,
-                timeout=self._config.red_teamer.timeout_seconds
+                timeout=self._config.red_teamer.timeout_seconds,
             )
 
             # Analyze output
@@ -137,9 +142,15 @@ class AgenticRedTeamer:
             # We look for indications that the test executed successfully and the assertions passed.
             output = result.stdout + "\n" + result.stderr
             if result.returncode == 0:
-                return True, f"Exploit test passed. Payload successfully triggered vulnerability.\n\nTest Code:\n{test_code}\n\nOutput:\n{output}"
+                return (
+                    True,
+                    f"Exploit test passed. Payload successfully triggered vulnerability.\n\nTest Code:\n{test_code}\n\nOutput:\n{output}",
+                )
             else:
-                return False, f"Exploit test failed or errored out. Could not conclusively prove vulnerability.\n\nTest Code:\n{test_code}\n\nOutput:\n{output}"
+                return (
+                    False,
+                    f"Exploit test failed or errored out. Could not conclusively prove vulnerability.\n\nTest Code:\n{test_code}\n\nOutput:\n{output}",
+                )
 
         except subprocess.TimeoutExpired:
             return False, "Exploit test timed out."

@@ -333,7 +333,7 @@ class RuleRegistry:
 # ── Module-level decorator ─────────────────────────────────────────────────────
 
 
-def rule(cls: _T) -> _T:
+def rule[T: "type[BaseRule]"](cls: _T) -> _T:
     """Class decorator that auto-registers a rule in the global registry.
 
     Apply this decorator to any ``BaseRule`` subclass to make it visible

@@ -300,9 +300,12 @@ def load_config(config_path: Path | None = None) -> PhoenixSecConfig:
             ) from exc
     else:
         from phoenixsec.core.logger import get_logger
+
         log = get_logger(__name__)
         if env_path and str(config_path) == env_path:
-            log.warning(f"PHOENIXSEC_CONFIG set to {env_path} but file does not exist. Using built-in defaults.")
+            log.warning(
+                f"PHOENIXSEC_CONFIG set to {env_path} but file does not exist. Using built-in defaults."
+            )
         elif not env_path and str(config_path) == "config.yaml":
             log.info("No config.yaml found, using built-in defaults.")
 

@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from phoenixsec.core.exceptions import PhoenixSecError
 from phoenixsec.core.red_teamer import AgenticRedTeamer
 from phoenixsec.models.finding import Finding, VulnerabilityType
 from phoenixsec.models.vulnerability import Severity
@@ -21,7 +20,7 @@ def red_teamer():
         mock_cfg.red_teamer.model = "gemini-1.5-flash"
         mock_cfg.red_teamer.timeout_seconds = 5
         mock_load.return_value = mock_cfg
-        
+
         # Override the env var directly so we don't depend on actual API keys in tests
         with patch.dict("os.environ", {"GEMINI_API_KEY": "test_key"}):
             yield AgenticRedTeamer(config=mock_cfg)
@@ -35,7 +34,7 @@ def test_attempt_exploit_unsupported_language(red_teamer):
         recommendation="Fix it",
         file_path="src/App.java",
     )
-    
+
     is_proven, details = red_teamer.attempt_exploit(finding, "class App {}", Path("src/App.java"))
     assert not is_proven
     assert "Unsupported language" in details
@@ -58,15 +57,17 @@ def test_attempt_exploit_success(mock_urlopen, red_teamer, tmp_path):
 
     # Mock the API returning a successful test payload
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "candidates": [
-            {
-                "content": {
-                    "parts": [{"text": "```python\ndef test_exploit():\n    assert True\n```"}]
+    mock_response.read.return_value = json.dumps(
+        {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [{"text": "```python\ndef test_exploit():\n    assert True\n```"}]
+                    }
                 }
-            }
-        ]
-    }).encode("utf-8")
+            ]
+        }
+    ).encode("utf-8")
     mock_response.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_response
 
@@ -99,15 +100,17 @@ def test_attempt_exploit_failure(mock_urlopen, red_teamer, tmp_path):
     file_path.write_text(code, encoding="utf-8")
 
     mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "candidates": [
-            {
-                "content": {
-                    "parts": [{"text": "```python\ndef test_exploit():\n    assert False\n```"}]
+    mock_response.read.return_value = json.dumps(
+        {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [{"text": "```python\ndef test_exploit():\n    assert False\n```"}]
+                    }
                 }
-            }
-        ]
-    }).encode("utf-8")
+            ]
+        }
+    ).encode("utf-8")
     mock_response.__enter__.return_value = mock_response
     mock_urlopen.return_value = mock_response
 

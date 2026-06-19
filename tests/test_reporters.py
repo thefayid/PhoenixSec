@@ -248,7 +248,8 @@ class TestCLIIntegration:
         runner = CliRunner()
         target = tmp_path / "vuln.py"
         target.write_text(
-            "cursor.execute('SELECT * FROM users WHERE id=' + uid)\n", encoding="utf-8"  # phoenixsec: ignore PY-SQLI-001
+            "cursor.execute('SELECT * FROM users WHERE id=' + uid)\n",
+            encoding="utf-8",  # phoenixsec: ignore PY-SQLI-001
         )
 
         # We need raw JSON report format for report command to parse it via from_dict.

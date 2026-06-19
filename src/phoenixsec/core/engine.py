@@ -5,11 +5,16 @@ Engine — Core pipeline orchestrator for loading, parsing, scanning, analyzing,
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from phoenixsec.core.analyzer import Analyzer
 from phoenixsec.core.logger import get_logger
 from phoenixsec.core.scanner import Scanner
 from phoenixsec.utils.parser import FileParser
+
+if TYPE_CHECKING:
+    from phoenixsec.core.config import PhoenixSecConfig
+    from phoenixsec.models.report import Report
 
 log = get_logger(__name__)
 

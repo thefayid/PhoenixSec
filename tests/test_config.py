@@ -136,7 +136,9 @@ class TestLoadConfig:
         assert cfg.logging.level == "DEBUG"
         assert cfg.scanning.min_severity == "HIGH"
 
-    def test_config_path_from_env_var(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_config_path_from_env_var(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         """The configuration path can be specified using PHOENIXSEC_CONFIG env variable."""
         config_file = tmp_path / "custom_config.yaml"
         config_file.write_text("logging:\n  level: DEBUG\n", encoding="utf-8")

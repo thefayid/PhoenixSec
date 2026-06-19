@@ -82,7 +82,7 @@ class SarifReporter(BaseReporter):
             "INFO": "note",
         }
 
-        for idx, f in enumerate(findings):
+        for _idx, f in enumerate(findings):
             # Resolve properties depending on whether it's a Finding or Vulnerability object
             if hasattr(f, "vulnerability_type"):
                 rule_id = f.rule_id

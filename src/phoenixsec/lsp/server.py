@@ -6,7 +6,6 @@ from lsprotocol.types import (
     TEXT_DOCUMENT_CODE_ACTION,
     TEXT_DOCUMENT_DID_CHANGE,
     TEXT_DOCUMENT_DID_OPEN,
-    WORKSPACE_EXECUTE_COMMAND,
     CodeAction,
     CodeActionKind,
     CodeActionParams,
@@ -15,7 +14,6 @@ from lsprotocol.types import (
     DiagnosticSeverity,
     DidChangeTextDocumentParams,
     DidOpenTextDocumentParams,
-    ExecuteCommandParams,
     Position,
     Range,
     TextEdit,
@@ -110,7 +108,7 @@ def _validate_document(uri: str, text: str) -> None:
 
 
 @server.feature(TEXT_DOCUMENT_DID_OPEN)
-def did_open(ls: LanguageServer, params: DidOpenTextDocumentParams):
+def did_open(ls: LanguageServer, params: DidOpenTextDocumentParams) -> None:
     """Handle textDocument/didOpen."""
     uri = params.text_document.uri
     text = params.text_document.text
@@ -118,7 +116,7 @@ def did_open(ls: LanguageServer, params: DidOpenTextDocumentParams):
 
 
 @server.feature(TEXT_DOCUMENT_DID_CHANGE)
-def did_change(ls: LanguageServer, params: DidChangeTextDocumentParams):
+def did_change(ls: LanguageServer, params: DidChangeTextDocumentParams) -> None:
     """Handle textDocument/didChange."""
     uri = params.text_document.uri
     document = ls.workspace.get_text_document(uri)
@@ -140,8 +138,12 @@ def code_action(ls: LanguageServer, params: CodeActionParams) -> list[CodeAction
                 command=Command(
                     title="Apply AI Patch",
                     command="phoenixsec.applyFix",
-                    arguments=[params.text_document.uri, diagnostic.code, diagnostic.range.start.line]
-                )
+                    arguments=[
+                        params.text_document.uri,
+                        diagnostic.code,
+                        diagnostic.range.start.line,
+                    ],
+                ),
             )
             actions.append(action)
 
@@ -149,13 +151,10 @@ def code_action(ls: LanguageServer, params: CodeActionParams) -> list[CodeAction
 
 
 @server.command("phoenixsec.applyFix")
-def execute_command(ls: LanguageServer, args):
+def execute_command(ls: LanguageServer, args) -> None:
     """Handle custom commands (like applying patches)."""
     # Handle pygls WorkspaceExecuteCommand params or direct args list
-    if hasattr(args, "arguments"):
-        arguments = args.arguments
-    else:
-        arguments = args
+    arguments = args.arguments if hasattr(args, "arguments") else args
 
     if not arguments or len(arguments) < 3:
         return
@@ -208,9 +207,9 @@ def execute_command(ls: LanguageServer, args):
                         TextEdit(
                             range=Range(
                                 start=Position(line=0, character=0),
-                                end=Position(line=last_line, character=last_char)
+                                end=Position(line=last_line, character=last_char),
                             ),
-                            new_text=patched_code
+                            new_text=patched_code,
                         )
                     ]
                 }
@@ -228,6 +227,7 @@ def execute_command(ls: LanguageServer, args):
 def start() -> None:
     """Start the Language Server."""
     import sys
+
     log.info("Starting PhoenixSec LSP Server on stdio...")
     print(
         "PhoenixSec LSP server running on stdio. Configure your editor to connect "

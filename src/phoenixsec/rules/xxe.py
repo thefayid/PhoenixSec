@@ -66,15 +66,17 @@ _JAVA_SAFE_RE = re.compile(
 )
 
 
-def _build_finding(
-    rule_id: str, line_number: int, file_path: str, sink: str, lang: str
-) -> Finding:
+def _build_finding(rule_id: str, line_number: int, file_path: str, sink: str, lang: str) -> Finding:
     recommendation = (
-        "Use `defusedxml` instead of standard `xml` libraries in Python, or explicitly "
-        "disable entity resolution in `lxml` (`resolve_entities=False`)."
-    ) if lang == "python" else (
-        "Always disable DTDs and external entities in Java XML parsers: "
-        "`factory.setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true);`"
+        (
+            "Use `defusedxml` instead of standard `xml` libraries in Python, or explicitly "
+            "disable entity resolution in `lxml` (`resolve_entities=False`)."
+        )
+        if lang == "python"
+        else (
+            "Always disable DTDs and external entities in Java XML parsers: "
+            '`factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);`'
+        )
     )
 
     return Finding(

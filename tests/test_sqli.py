@@ -455,11 +455,11 @@ class TestPythonSQLiRule:
         class MockConfig:
             class Scanning:
                 sqli_window_size = 2
+
             scanning = Scanning()
-        
-        import phoenixsec.rules.sqli
+
         monkeypatch.setattr(phoenixsec.rules.sqli, "load_config", lambda: MockConfig())
-        
+
         assert _ANALYZER.CONTEXT_WINDOW == 2
 
 

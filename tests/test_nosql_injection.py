@@ -43,4 +43,3 @@ def test_nosql_injection_regex_python():
     findings = rule.scan_context(ctx)
     assert len(findings) == 1
     assert findings[0].rule_id == "PSEC-NOSQL-PY-001"
-

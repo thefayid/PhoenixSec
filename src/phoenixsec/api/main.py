@@ -405,8 +405,7 @@ def apply_patch(request: PatchRequest) -> PatchResponse:
                 success=False,
                 is_ai_patch=False,
                 message=(
-                    "Patch application failed validation checks "
-                    "(syntax compile or re-scan failed)."
+                    "Patch application failed validation checks (syntax compile or re-scan failed)."
                 ),
                 patched_code=None,
             )

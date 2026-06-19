@@ -219,13 +219,7 @@ def test_bitbucket_create_pr_success(
     mock_get_response.read.return_value = b"{}"
     mock_post_response = MagicMock()
     mock_post_response.read.return_value = json.dumps(
-        {
-            "links": {
-                "html": {
-                    "href": "https://bitbucket.org/testowner/testrepo/pull-requests/3"
-                }
-            }
-        }
+        {"links": {"html": {"href": "https://bitbucket.org/testowner/testrepo/pull-requests/3"}}}
     ).encode("utf-8")
 
     mock_get_ctx = MagicMock()
@@ -253,5 +247,7 @@ def test_bitbucket_create_pr_success(
     assert test_file.read_text(encoding="utf-8") == "patched code"
 
     req = mock_urlopen.call_args_list[1][0][0]
-    assert req.full_url == "https://api.bitbucket.org/2.0/repositories/testowner/testrepo/pullrequests"
+    assert (
+        req.full_url == "https://api.bitbucket.org/2.0/repositories/testowner/testrepo/pullrequests"
+    )
     assert req.headers.get("Authorization") == "Bearer testtoken"

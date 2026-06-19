@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import pytest
-import yaml
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
+import yaml
 from typer.testing import CliRunner
 
 from phoenixsec.cli.main import app
@@ -13,15 +14,15 @@ def test_init_command_non_interactive(tmp_path: Path, monkeypatch: pytest.Monkey
     # Change working directory to tmp_path to keep test runs clean
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
-    
+
     result = runner.invoke(app, ["init", "--non-interactive"])
     assert result.exit_code == 0
     assert "exporting default config.yaml" in result.output
-    
+
     # Check generated config.yaml
     config_path = tmp_path / "config.yaml"
     assert config_path.is_file()
-    
+
     with config_path.open("r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
         assert cfg["scanning"]["min_severity"] == "LOW"
@@ -32,14 +33,11 @@ def test_init_command_non_interactive(tmp_path: Path, monkeypatch: pytest.Monkey
 @patch("typer.prompt")
 @patch("typer.confirm")
 def test_init_command_interactive(
-    mock_confirm: MagicMock,
-    mock_prompt: MagicMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch
+    mock_confirm: MagicMock, mock_prompt: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
-    
+
     # Mock user input answers
     # prompts:
     # 1. severity threshold ("LOW")
@@ -52,7 +50,7 @@ def test_init_command_interactive(
         "ollama",
         "http://test-ollama:11434",
         "qwen2.5-coder",
-        "github"
+        "github",
     ]
     # confirms:
     # 1. enable AI patcher (True)
@@ -63,7 +61,7 @@ def test_init_command_interactive(
     result = runner.invoke(app, ["init"])
     assert result.exit_code == 0
     assert "✓ Successfully configured and saved config.yaml" in result.output
-    
+
     # Verify config.yaml
     config_path = tmp_path / "config.yaml"
     assert config_path.is_file()
@@ -84,19 +82,17 @@ def test_init_command_interactive(
 
 @patch("phoenixsec.rules.engine.RuleEngine")
 def test_watch_should_watch_filtering(
-    mock_engine_cls: MagicMock,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch
+    mock_engine_cls: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    
+
     # Mock the rule engine and parser to support certain extensions
     mock_engine = MagicMock()
     mock_engine._parser.is_supported.side_effect = lambda p: p.suffix in {".py", ".java"}
     mock_engine_cls.return_value = mock_engine
 
     runner = CliRunner()
-    
+
     # Create folder structure
     src_dir = tmp_path / "src"
     src_dir.mkdir()
@@ -105,10 +101,7 @@ def test_watch_should_watch_filtering(
 
     # Create dummy config.yaml in tmp_path so the watcher loads it
     config_data = {
-        "scanning": {
-            "min_severity": "LOW",
-            "exclude_dirs": [".venv", "node_modules", "tests"]
-        }
+        "scanning": {"min_severity": "LOW", "exclude_dirs": [".venv", "node_modules", "tests"]}
     }
     with open(tmp_path / "config.yaml", "w", encoding="utf-8") as f:
         yaml.safe_dump(config_data, f)

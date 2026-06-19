@@ -38,6 +38,7 @@ def java_first(code: str) -> Finding | None:
 
 def js_findings(code: str) -> list[Finding]:
     from phoenixsec.rules.command_injection import JavaScriptCommandInjectionRule
+
     return JavaScriptCommandInjectionRule().scan_all(code, "test.js")
 
 
@@ -289,7 +290,9 @@ class TestJavaScriptCommandInjectionRule:
         assert findings[0].rule_id == "JS-CMD-001"
 
     def test_exec_template_literal_fires(self) -> None:
-        code = "const { execSync } = require('child_process');\nexecSync(`ping ${req.query.host}`);\n"
+        code = (
+            "const { execSync } = require('child_process');\nexecSync(`ping ${req.query.host}`);\n"
+        )
         findings = js_findings(code)
         assert len(findings) >= 1
 

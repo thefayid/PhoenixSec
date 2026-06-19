@@ -19,6 +19,7 @@ from phoenixsec.models.finding import Finding
 from phoenixsec.utils.parser import FileParser
 
 if TYPE_CHECKING:
+    from phoenixsec.core.config import PhoenixSecConfig
     from phoenixsec.rules.base_rule import BaseRule
 
 log = get_logger(__name__)
@@ -119,7 +120,9 @@ class Scanner:
                 lang_info = FileParser().detect_language(file_path)
                 language = lang_info.name.lower()
             except Exception:
-                log.warning(f"Could not determine language for {file_path}, defaulting to python rules")
+                log.warning(
+                    f"Could not determine language for {file_path}, defaulting to python rules"
+                )
                 language = "python"  # Default fallback
 
         findings: list[Finding] = []

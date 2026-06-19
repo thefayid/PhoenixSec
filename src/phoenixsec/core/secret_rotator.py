@@ -54,9 +54,13 @@ class MockCloudSecretRotator:
 
         # Simulating API Calls
         details = []
-        details.append(f"🔍 Identified {provider} credential in {finding.file_path}:{finding.line_number}")
+        details.append(
+            f"🔍 Identified {provider} credential in {finding.file_path}:{finding.line_number}"
+        )
         details.append(f"🌐 Initiating {provider} API connection (Simulated)...")
-        details.append(f"❌ Revoking compromised credential: {secret_value[:4]}...{secret_value[-4:]}")
+        details.append(
+            f"❌ Revoking compromised credential: {secret_value[:4]}...{secret_value[-4:]}"
+        )
 
         # Generate new mock key
         new_key = ""
@@ -82,7 +86,9 @@ class MockCloudSecretRotator:
                 content = env_path.read_text(encoding="utf-8")
                 if env_key in content:
                     # Replace existing
-                    new_content = re.sub(f"^{env_key}=.*$", env_entry.strip(), content, flags=re.MULTILINE)
+                    new_content = re.sub(
+                        f"^{env_key}=.*$", env_entry.strip(), content, flags=re.MULTILINE
+                    )
                     env_path.write_text(new_content, encoding="utf-8")
                 else:
                     with env_path.open("a", encoding="utf-8") as f:

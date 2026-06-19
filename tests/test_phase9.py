@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import unittest.mock
 from pathlib import Path
+
 import pytest
 
-from phoenixsec.core.exceptions import ParseError, FileNotFoundParseError, FilePermissionError
+from phoenixsec.core.exceptions import FileNotFoundParseError, ParseError
 from phoenixsec.models.finding import Finding, VulnerabilityType
 from phoenixsec.models.vulnerability import Severity
-from phoenixsec.rules.engine import EngineResult, RuleEngine
+from phoenixsec.rules.engine import EngineResult
 from phoenixsec.utils.parser import FileParser
 
 

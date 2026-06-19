@@ -43,14 +43,14 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 
 from phoenixsec.models.vulnerability import Severity
 
 # ── VulnerabilityType ──────────────────────────────────────────────────────────
 
 
-class VulnerabilityType(str, Enum):
+class VulnerabilityType(StrEnum):
     """Taxonomy of vulnerability types detectable by PhoenixSec.
 
     Using ``str`` as a mixin means members serialise to plain strings,
@@ -108,7 +108,7 @@ class VulnerabilityType(str, Enum):
 # ── ConfidenceTier ─────────────────────────────────────────────────────────────
 
 
-class ConfidenceTier(str, Enum):
+class ConfidenceTier(StrEnum):
     """Human-readable tier derived from a numeric confidence score.
 
     Thresholds
@@ -397,7 +397,9 @@ class Finding:
             return NotImplemented
         if self.severity != other.severity:
             return self.severity > other.severity  # reversed: higher severity = earlier
-        return self.confidence_score > other.confidence_score  # reversed: higher confidence = earlier
+        return (
+            self.confidence_score > other.confidence_score
+        )  # reversed: higher confidence = earlier
 
     # ── String representation ──────────────────────────────────────────────────
 

@@ -517,7 +517,10 @@ class Patcher:
                     line = lines[line_idx]
                     if "DocumentBuilderFactory.newInstance()" in line:
                         indent = re.match(r"^(\s*)", line).group(1)
-                        m = re.match(r"^\s*(?:DocumentBuilderFactory\s+)?([a-zA-Z0-9_]+)\s*=\s*DocumentBuilderFactory\.newInstance\(\)", line)
+                        m = re.match(
+                            r"^\s*(?:DocumentBuilderFactory\s+)?([a-zA-Z0-9_]+)\s*=\s*DocumentBuilderFactory\.newInstance\(\)",
+                            line,
+                        )
                         if m:
                             var_name = m.group(1)
                             new_block = f'{line}{line_ending}{indent}{var_name}.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);'

@@ -41,6 +41,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import phoenixsec.rules.ast_rules  # noqa: F401 — AST-level Python analysis
 import phoenixsec.rules.broken_auth  # noqa: F401
@@ -66,6 +67,10 @@ from phoenixsec.models.finding import Finding
 from phoenixsec.rules.base_rule import BaseRule, RuleContext
 from phoenixsec.rules.registry import RuleRegistry
 from phoenixsec.utils.parser import FileParser
+
+if TYPE_CHECKING:
+    from phoenixsec.core.config import PhoenixSecConfig
+    from phoenixsec.models.report import Report
 
 log = get_logger(__name__)
 
@@ -409,8 +414,7 @@ class RuleEngine:
                     taint_findings = taint_analyzer.trace_file_calls(file_path, code)
                     if taint_findings:
                         existing_keys = {
-                            (f.rule_id, f.line_number, f.file_path)
-                            for f in result.findings
+                            (f.rule_id, f.line_number, f.file_path) for f in result.findings
                         }
                         for tf in taint_findings:
                             key = (tf.rule_id, tf.line_number, tf.file_path)

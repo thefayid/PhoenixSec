@@ -410,11 +410,9 @@ def test_validate_patch_skips_test_execution_by_default(
 
 
 @patch("urllib.request.urlopen")
-def test_generate_patch_ollama_success(
-    mock_urlopen: MagicMock, dummy_finding: Finding
-) -> None:
-    from phoenixsec.core.config import PhoenixSecConfig
+def test_generate_patch_ollama_success(mock_urlopen: MagicMock, dummy_finding: Finding) -> None:
     from phoenixsec.core.ai_patcher import AIPatcher
+    from phoenixsec.core.config import PhoenixSecConfig
 
     config = PhoenixSecConfig()
     config.patching.provider = "ollama"
@@ -423,9 +421,7 @@ def test_generate_patch_ollama_success(
 
     mock_response = MagicMock()
     mock_response.read.return_value = json.dumps(
-        {
-            "response": "```python\nprint('ollama patched code')\n```"
-        }
+        {"response": "```python\nprint('ollama patched code')\n```"}
     ).encode("utf-8")
     mock_urlopen.return_value.__enter__.return_value = mock_response
 
@@ -446,9 +442,11 @@ def test_patch_with_fallback_self_healing_success(
     mock_urlopen: MagicMock, dummy_finding: Finding, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("PHOENIXSEC_AI_KEY", "test_gemini_key")
-    
+
     file_path = tmp_path / "app.py"
-    file_path.write_text("def query(request):\n    cursor.execute('SELECT ' + request.GET['id'])", encoding="utf-8")
+    file_path.write_text(
+        "def query(request):\n    cursor.execute('SELECT ' + request.GET['id'])", encoding="utf-8"
+    )
 
     mock_response_1 = MagicMock()
     mock_response_1.read.return_value = json.dumps(
@@ -461,11 +459,7 @@ def test_patch_with_fallback_self_healing_success(
 
     mock_response_2 = MagicMock()
     mock_response_2.read.return_value = json.dumps(
-        {
-            "candidates": [
-                {"content": {"parts": [{"text": "def query(request):\n    pass"}]}}
-            ]
-        }
+        {"candidates": [{"content": {"parts": [{"text": "def query(request):\n    pass"}]}}]}
     ).encode("utf-8")
 
     mock_urlopen.side_effect = [
@@ -474,6 +468,7 @@ def test_patch_with_fallback_self_healing_success(
     ]
 
     from phoenixsec.rules.engine import EngineResult
+
     patcher = AIPatcher()
     patcher._config.patching.require_human_approval = False
     mock_scan = MagicMock()
@@ -490,20 +485,26 @@ def test_patch_with_fallback_self_healing_success(
 
 def test_query_ollama_gemini_model_error() -> None:
     from phoenixsec.core.config import PhoenixSecConfig
+
     config = PhoenixSecConfig()
     config.patching.provider = "ollama"
     config.patching.model = "gemini-1.5-flash"
-    
+
     patcher = AIPatcher(config=config)
-    with pytest.raises(PhoenixSecError, match="Gemini models are not supported with the Ollama provider"):
-        patcher.generate_patch("print('vuln')", Finding(
-            vulnerability_type=VulnerabilityType.SQL_INJECTION,
-            severity=Severity.CRITICAL,
-            confidence_score=0.9,
-            recommendation="Use parameterized queries.",
-            file_path="app.py",
-            line_number=3,
-        ))
+    with pytest.raises(
+        PhoenixSecError, match="Gemini models are not supported with the Ollama provider"
+    ):
+        patcher.generate_patch(
+            "print('vuln')",
+            Finding(
+                vulnerability_type=VulnerabilityType.SQL_INJECTION,
+                severity=Severity.CRITICAL,
+                confidence_score=0.9,
+                recommendation="Use parameterized queries.",
+                file_path="app.py",
+                line_number=3,
+            ),
+        )
 
 
 @patch("sys.stdin.isatty", return_value=True)
@@ -516,14 +517,18 @@ def test_patch_with_fallback_declined_reverts_file(
     file_path.write_text(original_code, encoding="utf-8")
 
     from phoenixsec.rules.engine import EngineResult
+
     patcher = AIPatcher()
     patcher._config.patching.require_human_approval = True
-    
+
     mock_patch = MagicMock(return_value=("print('patched')", "summary", [1]))
     from phoenixsec.core.patcher import Patcher
+
     with patch.object(Patcher, "patch", mock_patch):
         mock_scan = MagicMock()
-        mock_scan.return_value = EngineResult(file_path=str(file_path), language="python", findings=[])
+        mock_scan.return_value = EngineResult(
+            file_path=str(file_path), language="python", findings=[]
+        )
         patcher._rule_engine.scan_code = mock_scan
 
         success, patched_code, is_ai_patch = patcher.patch_with_fallback(file_path, [dummy_finding])
@@ -540,16 +545,19 @@ def test_patch_with_fallback_require_human_approval_non_interactive(
     file_path.write_text(original_code, encoding="utf-8")
 
     from phoenixsec.rules.engine import EngineResult
-    
+
     # Case A: require_human_approval is True -> should skip patching
     patcher = AIPatcher()
     patcher._config.patching.require_human_approval = True
-    
+
     mock_patch = MagicMock(return_value=("print('patched')", "summary", [1]))
     from phoenixsec.core.patcher import Patcher
+
     with patch.object(Patcher, "patch", mock_patch):
         mock_scan = MagicMock()
-        mock_scan.return_value = EngineResult(file_path=str(file_path), language="python", findings=[])
+        mock_scan.return_value = EngineResult(
+            file_path=str(file_path), language="python", findings=[]
+        )
         patcher._rule_engine.scan_code = mock_scan
 
         success, patched_code, is_ai_patch = patcher.patch_with_fallback(file_path, [dummy_finding])
@@ -559,14 +567,14 @@ def test_patch_with_fallback_require_human_approval_non_interactive(
     # Case B: require_human_approval is False -> should apply patch
     patcher = AIPatcher()
     patcher._config.patching.require_human_approval = False
-    
+
     with patch.object(Patcher, "patch", mock_patch):
         mock_scan = MagicMock()
-        mock_scan.return_value = EngineResult(file_path=str(file_path), language="python", findings=[])
+        mock_scan.return_value = EngineResult(
+            file_path=str(file_path), language="python", findings=[]
+        )
         patcher._rule_engine.scan_code = mock_scan
 
         success, patched_code, is_ai_patch = patcher.patch_with_fallback(file_path, [dummy_finding])
         assert success is True
         assert file_path.read_text(encoding="utf-8") == "print('patched')"
-
-

@@ -154,11 +154,10 @@ class TestHardcodedSecretsRule:
         assert scan_findings(code) == []
 
     def test_fstring_with_secret_is_not_ignored(self) -> None:
-        code = "my_api_key = f\"sk-1234567890abcdef1234567890 and context {val1} and {val2}\"\n"
+        code = 'my_api_key = f"sk-1234567890abcdef1234567890 and context {val1} and {val2}"\n'
         findings = scan_findings(code)
         assert len(findings) == 1
         assert "sk-1234567890abcdef1234567890" in findings[0].code_snippet
-
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -189,32 +188,35 @@ class TestRuleRegistryIntegration:
 # Active Secret Verification tests
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 class TestActiveSecretVerification:
     def test_verify_github_token_mocked(self, monkeypatch) -> None:
-        from unittest.mock import MagicMock
         import urllib.request
+        from unittest.mock import MagicMock
+
         from phoenixsec.rules.secrets import verify_secret
 
         mock_response = MagicMock()
         mock_response.status = 200
         mock_response.__enter__.return_value = mock_response
-        
+
         # Mock urllib.request.urlopen to return mock_response
         monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: mock_response)
-        
+
         assert verify_secret("GitHub Token", "ghp_mocktoken12345678901234567890123456") is True
 
     def test_verify_openai_token_mocked(self, monkeypatch) -> None:
-        from unittest.mock import MagicMock
         import urllib.request
+        from unittest.mock import MagicMock
+
         from phoenixsec.rules.secrets import verify_secret
 
         mock_response = MagicMock()
         mock_response.status = 200
         mock_response.__enter__.return_value = mock_response
-        
+
         monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: mock_response)
-        
+
         assert verify_secret("Generic Key", "sk-proj-mocktoken1234567890abcdef1234") is True
 
     def test_verify_secret_offline_mode(self, monkeypatch) -> None:
@@ -223,4 +225,3 @@ class TestActiveSecretVerification:
         monkeypatch.setenv("PHOENIXSEC_OFFLINE", "1")
         # Should return False immediately without calling urlopen
         assert verify_secret("GitHub Token", "ghp_mocktoken12345678901234567890123456") is False
-

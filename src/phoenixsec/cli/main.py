@@ -20,6 +20,7 @@ Usage examples
 
 from __future__ import annotations
 
+import contextlib
 import io
 import sys
 from pathlib import Path
@@ -151,7 +152,9 @@ def version() -> None:
 # ── scan command ───────────────────────────────────────────────────────────────
 
 
-@app.command(epilog="Examples:\n  phoenixsec scan ./src --severity HIGH --format json\n  phoenixsec scan ./src --patch")
+@app.command(
+    epilog="Examples:\n  phoenixsec scan ./src --severity HIGH --format json\n  phoenixsec scan ./src --patch"
+)
 def scan(
     ctx: typer.Context,
     target: Annotated[
@@ -449,11 +452,15 @@ def scan(
     # Agentic Proof-of-Exploit (Red Teamer) Phase
     if prove or cfg.red_teamer.enabled:
         from phoenixsec.core.red_teamer import AgenticRedTeamer
+
         red_teamer = AgenticRedTeamer(rule_engine=engine, config=cfg)
 
-        console.print("[bold cyan]🤖 Initiating Agentic Red Teamer (Proof-of-Exploit)...[/bold cyan]")
+        console.print(
+            "[bold cyan]🤖 Initiating Agentic Red Teamer (Proof-of-Exploit)...[/bold cyan]"
+        )
 
         from dataclasses import replace
+
         updated_red_teamer_findings = []
         for finding in report.findings:
             f_path = Path(finding.file_path)
@@ -463,28 +470,38 @@ def scan(
 
             code_content = f_path.read_text(encoding="utf-8")
 
-            console.print(f"  [dim]Attempting to prove {finding.vulnerability_type.value} in {f_path.name}:{finding.line_number}[/dim]")
+            console.print(
+                f"  [dim]Attempting to prove {finding.vulnerability_type.value} in {f_path.name}:{finding.line_number}[/dim]"
+            )
             is_proven, proof_details = red_teamer.attempt_exploit(finding, code_content, f_path)
 
             finding = replace(finding, proven=is_proven, proof_details=proof_details)
             updated_red_teamer_findings.append(finding)
 
             if is_proven:
-                console.print(f"  [bold green]✓ PROVEN:[/bold green] {finding.vulnerability_type.value}")
+                console.print(
+                    f"  [bold green]✓ PROVEN:[/bold green] {finding.vulnerability_type.value}"
+                )
             else:
-                console.print(f"  [bold yellow]✗ UNPROVEN:[/bold yellow] {finding.vulnerability_type.value}")
+                console.print(
+                    f"  [bold yellow]✗ UNPROVEN:[/bold yellow] {finding.vulnerability_type.value}"
+                )
         report.findings = updated_red_teamer_findings
 
     # Secret Auto-Rotation Phase
     if rotate_secrets:
         from phoenixsec.core.secret_rotator import MockCloudSecretRotator
+
         rotator = MockCloudSecretRotator(workspace_root=Path.cwd())
 
         has_secrets = any(f.vulnerability_type.value == "Hardcoded Secret" for f in report.findings)
         if has_secrets:
-            console.print("[bold magenta]🔐 Initiating Ephemeral Secret Auto-Rotation...[/bold magenta]")
+            console.print(
+                "[bold magenta]🔐 Initiating Ephemeral Secret Auto-Rotation...[/bold magenta]"
+            )
 
             from dataclasses import replace
+
             updated_rotator_findings = []
             for finding in report.findings:
                 if finding.vulnerability_type.value == "Hardcoded Secret":
@@ -1301,7 +1318,10 @@ def benchmark(
 # ── scan-org command ───────────────────────────────────────────────────────────
 
 
-@app.command(name="scan-org", epilog="Examples:\n  phoenixsec scan-org my-org --format json\n  phoenixsec scan-org my-org --workers 8 --no-sca")
+@app.command(
+    name="scan-org",
+    epilog="Examples:\n  phoenixsec scan-org my-org --format json\n  phoenixsec scan-org my-org --workers 8 --no-sca",
+)
 def scan_org(
     ctx: typer.Context,
     org: Annotated[
@@ -1410,7 +1430,9 @@ def scan_org(
     cfg = ctx.obj["config"]
 
     if not token:
-        err_console.print("[red]GITHUB_TOKEN environment variable is required for org scanning[/red]")
+        err_console.print(
+            "[red]GITHUB_TOKEN environment variable is required for org scanning[/red]"
+        )
         raise typer.Exit(code=1)
 
     # Validate severity option
@@ -1502,7 +1524,6 @@ def scan_org(
         org_reports_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Per-repo scan worker ──────────────────────────────────────────────────
-    repo_results: dict[str, dict] = {}  # repo_name → {findings, status, error}
 
     def _scan_repo(repo: dict) -> dict:
         """Clone and scan a single repository. Returns a result dict."""
@@ -1844,7 +1865,9 @@ def init(
                 config_data["patching"]["ollama_url"] = url
                 config_data["patching"]["model"] = model
             else:
-                model = typer.prompt("What Gemini model should we request?", default="gemini-1.5-flash")
+                model = typer.prompt(
+                    "What Gemini model should we request?", default="gemini-1.5-flash"
+                )
                 config_data["patching"]["model"] = model
                 console.print(
                     "[cyan]👉 Set PHOENIXSEC_AI_KEY or GEMINI_API_KEY environment variable to supply your API key.[/cyan]"
@@ -1858,7 +1881,9 @@ def init(
             try:
                 ctx.invoke(install_hook, target_dir=Path("."), severity="HIGH", force=True)
             except Exception as e:
-                console.print(f"[yellow]Failed to install pre-commit hook automatically: {e}[/yellow]")
+                console.print(
+                    f"[yellow]Failed to install pre-commit hook automatically: {e}[/yellow]"
+                )
 
         # Prompt for CI/CD Pipelines
         generate_ci = typer.confirm(
@@ -2008,10 +2033,8 @@ def watch(
         files = {}
         for p in resolved.rglob("*"):
             if should_watch(p):
-                try:
+                with contextlib.suppress(Exception):
                     files[p] = p.stat().st_mtime
-                except Exception:
-                    pass
         return files
 
     console.print(
@@ -2042,10 +2065,14 @@ def watch(
             for path, mtime in current_files.items():
                 is_changed = False
                 if path not in watched_files:
-                    console.print(f"\n[bold cyan]➕ File added: {path.relative_to(resolved)}[/bold cyan]")
+                    console.print(
+                        f"\n[bold cyan]➕ File added: {path.relative_to(resolved)}[/bold cyan]"
+                    )
                     is_changed = True
                 elif watched_files[path] < mtime:
-                    console.print(f"\n[bold cyan]🔄 File modified: {path.relative_to(resolved)}[/bold cyan]")
+                    console.print(
+                        f"\n[bold cyan]🔄 File modified: {path.relative_to(resolved)}[/bold cyan]"
+                    )
                     is_changed = True
 
                 if is_changed:
@@ -2069,7 +2096,10 @@ def watch(
                                 detail = Text.assemble(
                                     (f"#{idx} ", "bold white"),
                                     (f"[{finding.severity.name}] ", f"bold {color}"),
-                                    (f"{finding.vulnerability_type} at line {finding.line_number}\n\n", "bold"),
+                                    (
+                                        f"{finding.vulnerability_type} at line {finding.line_number}\n\n",
+                                        "bold",
+                                    ),
                                     ("Recommendation: ", "bold green"),
                                     (f"{finding.recommendation}", "white"),
                                 )
@@ -2094,20 +2124,25 @@ def watch(
 
 # ── lsp command ────────────────────────────────────────────────────────────────
 
+
 @app.command(epilog="Examples:\n  phoenixsec lsp")
 def lsp(ctx: typer.Context) -> None:
     """Start the PhoenixSec Language Server Protocol (LSP) server.
-    
+
     This command starts an LSP server that communicates over standard I/O.
     It allows any LSP-compatible editor (VS Code, Cursor, Neovim, Zed) to
     receive real-time security diagnostics as you type.
     """
     try:
         from phoenixsec.lsp.server import start
+
         start()
     except ImportError as e:
-        err_console.print(f"[bold red]LSP dependencies not installed. Ensure pygls is installed: {e}[/bold red]")
+        err_console.print(
+            f"[bold red]LSP dependencies not installed. Ensure pygls is installed: {e}[/bold red]"
+        )
         raise typer.Exit(1)
+
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 

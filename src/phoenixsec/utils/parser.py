@@ -662,14 +662,12 @@ class FileParser:
         ParseError
             If every encoding in ``encodings`` fails.
         """
-        last_exc: Exception | None = None
 
         for enc in encodings:
             try:
                 content = path.read_text(encoding=enc)
                 return content, enc
-            except UnicodeDecodeError as exc:
-                last_exc = exc
+            except UnicodeDecodeError:
                 log.debug(f"Encoding {enc!r} failed for {path.name}, trying next")
                 continue
             except OSError as exc:

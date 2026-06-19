@@ -15,9 +15,9 @@ def test_import_rules_first() -> None:
         capture_output=True,
         text=True,
     )
-    assert (
-        result.returncode == 0
-    ), f"Importing rules first failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    assert result.returncode == 0, (
+        f"Importing rules first failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
 
 
 def test_import_core_first() -> None:
@@ -27,9 +27,9 @@ def test_import_core_first() -> None:
         capture_output=True,
         text=True,
     )
-    assert (
-        result.returncode == 0
-    ), f"Importing core first failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    assert result.returncode == 0, (
+        f"Importing core first failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
 
 
 def test_import_rules_base_rule_first() -> None:
@@ -39,6 +39,6 @@ def test_import_rules_base_rule_first() -> None:
         capture_output=True,
         text=True,
     )
-    assert (
-        result.returncode == 0
-    ), f"Importing rules.base_rule first failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    assert result.returncode == 0, (
+        f"Importing rules.base_rule first failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )

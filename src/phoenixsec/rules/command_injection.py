@@ -377,7 +377,10 @@ class _CmdInjectionAnalyzer:
         elif lang in ("javascript", "typescript"):
             if re.search(r"\bexec(?:Sync|FileSync)?\b", window_text):
                 signals.has_implicit_shell = True
-            if re.search(r"\bspawn(?:Sync)?\b.*?,.*?\[", window_text, re.DOTALL) or "shell: false" in window_text:
+            if (
+                re.search(r"\bspawn(?:Sync)?\b.*?,.*?\[", window_text, re.DOTALL)
+                or "shell: false" in window_text
+            ):
                 signals.has_java_multi_arg = True
             else:
                 signals.has_java_single_str_exec = True
@@ -467,11 +470,10 @@ class _CmdInjectionAnalyzer:
             or stripped.startswith("*")
         ):
             return True
-        if lang in ("java", "go", "javascript", "typescript") and (
-            stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*")
-        ):
-            return True
-        return False
+        return bool(
+            lang in ("java", "go", "javascript", "typescript")
+            and (stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*"))
+        )
 
 
 _ANALYZER = _CmdInjectionAnalyzer()

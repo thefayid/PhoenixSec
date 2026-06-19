@@ -108,11 +108,12 @@ class SCAScanner:
 
     def _scan_python_pyproject(self, pyproject_file: Path) -> list[Finding]:
         import tomllib
+
         findings: list[Finding] = []
         try:
             with open(pyproject_file, "rb") as f:
                 data = tomllib.load(f)
-            
+
             # Extract dependencies
             deps = []
             project_data = data.get("project", {})
@@ -121,14 +122,14 @@ class SCAScanner:
                 project_deps = project_data.get("dependencies", [])
                 if isinstance(project_deps, list):
                     deps.extend(project_deps)
-                
+
                 # Optional dependencies
                 optional_deps = project_data.get("optional-dependencies", {})
                 if isinstance(optional_deps, dict):
                     for group_deps in optional_deps.values():
                         if isinstance(group_deps, list):
                             deps.extend(group_deps)
-            
+
             # Also check poetry dependencies if standard is missing
             poetry_data = data.get("tool", {}).get("poetry", {})
             if isinstance(poetry_data, dict):
@@ -153,14 +154,16 @@ class SCAScanner:
             try:
                 temp_req.write_text("\n".join(deps), encoding="utf-8")
                 raw_findings = self._scan_python_requirements(temp_req)
-                
+
                 # Remap target file_path of findings to actual pyproject.toml
                 from dataclasses import replace
+
                 for rf in raw_findings:
                     findings.append(replace(rf, file_path=str(pyproject_file)))
             finally:
                 if temp_req.is_file():
                     import contextlib
+
                     with contextlib.suppress(Exception):
                         temp_req.unlink()
 
@@ -197,7 +200,6 @@ class SCAScanner:
                 desc = vuln.get("description", "No description provided.")
                 fix_versions = vuln.get("fix_versions", [])
 
-                title = f"Dependency Vulnerability: {name}=={version}"
                 details = f"Vulnerability {vuln_id}"
                 if cve:
                     details += f" ({cve})"
@@ -228,7 +230,7 @@ class SCAScanner:
 
     def _scan_node_dependencies(self, pkg_file: Path) -> list[Finding]:
         findings: list[Finding] = []
-        
+
         # Check for lockfiles before running npm audit
         lock_file = pkg_file.parent / "package-lock.json"
         yarn_lock = pkg_file.parent / "yarn.lock"
@@ -278,7 +280,7 @@ class SCAScanner:
             via_list = vuln_info.get("via", [])
             for via in via_list:
                 if isinstance(via, dict):
-                    title_str = via.get("title", f"Vulnerable dependency in {pkg_name}")
+                    via.get("title", f"Vulnerable dependency in {pkg_name}")
                     url = via.get("url")
                     cwe_list = via.get("cwe", [])
                     cwe_id = cwe_list[0] if cwe_list else "CWE-1104"

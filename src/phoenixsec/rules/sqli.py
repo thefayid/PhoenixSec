@@ -476,9 +476,7 @@ class _SQLiAnalyzer:
 
             for var in list(tracked_vars):
                 # Match "var = ..." or "var += ..."
-                assign_pattern = re.compile(
-                    r"\b" + re.escape(var) + r"\s*(\+?=)\s*(.*)"
-                )
+                assign_pattern = re.compile(r"\b" + re.escape(var) + r"\s*(\+?=)\s*(.*)")
                 m = assign_pattern.search(line)
                 if m:
                     if i < window_start:
@@ -489,8 +487,17 @@ class _SQLiAnalyzer:
                     words = re.findall(r"\b([a-zA-Z_]\w*)\b", rhs)
                     for word in words:
                         if word not in {
-                            "None", "True", "False", "self", "this", "str", "String",
-                            "SELECT", "INSERT", "UPDATE", "DELETE"
+                            "None",
+                            "True",
+                            "False",
+                            "self",
+                            "this",
+                            "str",
+                            "String",
+                            "SELECT",
+                            "INSERT",
+                            "UPDATE",
+                            "DELETE",
                         }:
                             tracked_vars.add(word)
                     break
@@ -654,14 +661,15 @@ class _SQLiAnalyzer:
             stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*")
         ):
             return True
-        if lang == "php" and (
-            stripped.startswith("//")
-            or stripped.startswith("#")
-            or stripped.startswith("/*")
-            or stripped.startswith("*")
-        ):
-            return True
-        return False
+        return bool(
+            lang == "php"
+            and (
+                stripped.startswith("//")
+                or stripped.startswith("#")
+                or stripped.startswith("/*")
+                or stripped.startswith("*")
+            )
+        )
 
 
 # Module-level singleton — instantiated once at import time.

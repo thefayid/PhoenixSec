@@ -4,15 +4,13 @@ Tests for rules/iac.py — Dockerfile and Terraform security rules.
 
 from __future__ import annotations
 
-import pytest
-
 import phoenixsec.rules.iac  # noqa: F401
 from phoenixsec.models.finding import VulnerabilityType
 from phoenixsec.models.vulnerability import Severity
 from phoenixsec.rules.iac import (
+    DockerfileEnvSecretsRule,
     DockerfileUnpinnedTagRule,
     DockerfileUserRootRule,
-    DockerfileEnvSecretsRule,
     TerraformOpenIngressRule,
     TerraformPublicS3BucketRule,
 )
@@ -21,7 +19,7 @@ from phoenixsec.rules.iac import (
 class TestDockerfileRules:
     def test_unpinned_tag_rule(self) -> None:
         rule = DockerfileUnpinnedTagRule()
-        
+
         # 1. Unpinned or latest tags
         code_unpinned = "FROM node\nRUN npm install\n"
         findings = rule.scan_all(code_unpinned, "Dockerfile")
@@ -85,12 +83,12 @@ class TestTerraformRules:
 
         # 1. SSH open to anywhere
         code_ssh_open = (
-            "resource \"aws_security_group\" \"allow_ssh\" {\n"
+            'resource "aws_security_group" "allow_ssh" {\n'
             "  ingress {\n"
             "    from_port   = 22\n"
             "    to_port     = 22\n"
-            "    protocol    = \"tcp\"\n"
-            "    cidr_blocks = [\"0.0.0.0/0\"]\n"
+            '    protocol    = "tcp"\n'
+            '    cidr_blocks = ["0.0.0.0/0"]\n'
             "  }\n"
             "}\n"
         )
@@ -102,11 +100,11 @@ class TestTerraformRules:
 
         # 2. Port 80 open to anywhere (should be clean)
         code_http_open = (
-            "resource \"aws_security_group\" \"allow_http\" {\n"
+            'resource "aws_security_group" "allow_http" {\n'
             "  ingress {\n"
             "    from_port   = 80\n"
             "    to_port     = 80\n"
-            "    cidr_blocks = [\"0.0.0.0/0\"]\n"
+            '    cidr_blocks = ["0.0.0.0/0"]\n'
             "  }\n"
             "}\n"
         )
@@ -117,9 +115,9 @@ class TestTerraformRules:
 
         # 1. Public ACL
         code_public = (
-            "resource \"aws_s3_bucket\" \"b\" {\n"
-            "  bucket = \"my-tf-test-bucket\"\n"
-            "  acl    = \"public-read\"\n"
+            'resource "aws_s3_bucket" "b" {\n'
+            '  bucket = "my-tf-test-bucket"\n'
+            '  acl    = "public-read"\n'
             "}\n"
         )
         findings = rule.scan_all(code_public, "main.tf")
@@ -129,9 +127,9 @@ class TestTerraformRules:
 
         # 2. Private ACL (should be clean)
         code_private = (
-            "resource \"aws_s3_bucket\" \"b\" {\n"
-            "  bucket = \"my-tf-test-bucket\"\n"
-            "  acl    = \"private\"\n"
+            'resource "aws_s3_bucket" "b" {\n'
+            '  bucket = "my-tf-test-bucket"\n'
+            '  acl    = "private"\n'
             "}\n"
         )
         assert len(rule.scan_all(code_private, "main.tf")) == 0
@@ -142,7 +140,7 @@ class TestRuleRegistryIntegration:
         from phoenixsec.rules.registry import RuleRegistry
 
         reg = RuleRegistry.global_instance()
-        
+
         dkr_rules = [r.rule_id for r in reg.get_rules("dockerfile")]
         assert "IAC-DKR-001" in dkr_rules
         assert "IAC-DKR-002" in dkr_rules

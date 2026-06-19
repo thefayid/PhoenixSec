@@ -1,15 +1,14 @@
-import pytest
 from unittest.mock import Mock, patch
 
 from lsprotocol.types import (
+    DiagnosticSeverity,
     DidChangeTextDocumentParams,
     DidOpenTextDocumentParams,
     TextDocumentItem,
     VersionedTextDocumentIdentifier,
-    DiagnosticSeverity
 )
 
-from phoenixsec.lsp.server import did_open, did_change, uri_to_path, _map_severity
+from phoenixsec.lsp.server import _map_severity, did_change, did_open, uri_to_path
 from phoenixsec.models.vulnerability import Severity
 
 
@@ -18,6 +17,7 @@ def test_uri_to_path() -> None:
     assert uri_to_path("file:///home/user/code.py") == "/home/user/code.py"
     # Test Windows path conversion if needed (e.g., removing leading slash from C:)
     import os
+
     if os.name == "nt":
         assert uri_to_path("file:///C:/Users/user/code.py") == "C:/Users/user/code.py"
 
@@ -35,15 +35,12 @@ def test_lsp_did_open(mock_publish) -> None:
     code = "import os\nfrom flask import request\ncmd = request.args.get('cmd')\nos.system(cmd)\n"
     params = DidOpenTextDocumentParams(
         text_document=TextDocumentItem(
-            uri="file:///test/vulnerable.py",
-            language_id="python",
-            version=1,
-            text=code
+            uri="file:///test/vulnerable.py", language_id="python", version=1, text=code
         )
     )
     # Call the event handler directly (bypassing full LSP network stack)
     did_open(Mock(), params)
-    
+
     mock_publish.assert_called_once()
     args, kwargs = mock_publish.call_args
     assert args[0] == "file:///test/vulnerable.py"
@@ -56,21 +53,18 @@ def test_lsp_did_open(mock_publish) -> None:
 def test_lsp_did_change(mock_publish) -> None:
     code = "import sqlite3\nconn.execute(f'SELECT * FROM users WHERE id={user_id}')\n"
     params = DidChangeTextDocumentParams(
-        text_document=VersionedTextDocumentIdentifier(
-            uri="file:///test/sqli.py",
-            version=2
-        ),
-        content_changes=[]
+        text_document=VersionedTextDocumentIdentifier(uri="file:///test/sqli.py", version=2),
+        content_changes=[],
     )
-    
+
     # Mock the workspace document retrieval
     mock_ls = Mock()
     mock_doc = Mock()
     mock_doc.source = code
     mock_ls.workspace.get_text_document.return_value = mock_doc
-    
+
     did_change(mock_ls, params)
-    
+
     mock_publish.assert_called_once()
     args, kwargs = mock_publish.call_args
     diagnostics = args[1]
@@ -79,29 +73,34 @@ def test_lsp_did_change(mock_publish) -> None:
 
 
 def test_lsp_code_action() -> None:
-    from lsprotocol.types import CodeActionParams, CodeActionContext, Diagnostic, Range, Position, CodeActionKind
-    
+    from lsprotocol.types import (
+        CodeActionContext,
+        CodeActionKind,
+        CodeActionParams,
+        Diagnostic,
+        Position,
+        Range,
+    )
+
     diag = Diagnostic(
         range=Range(start=Position(line=1, character=0), end=Position(line=1, character=20)),
         message="Test SQLi",
         source="PhoenixSec Vibe-Guard",
-        code="PSEC-SQLI-001"
+        code="PSEC-SQLI-001",
     )
-    
+
     params = CodeActionParams(
         text_document=TextDocumentItem(
-            uri="file:///test/sqli.py",
-            language_id="python",
-            version=1,
-            text=""
+            uri="file:///test/sqli.py", language_id="python", version=1, text=""
         ),
         range=Range(start=Position(line=1, character=0), end=Position(line=1, character=20)),
-        context=CodeActionContext(diagnostics=[diag])
+        context=CodeActionContext(diagnostics=[diag]),
     )
-    
+
     from phoenixsec.lsp.server import code_action
+
     actions = code_action(Mock(), params)
-    
+
     assert actions is not None
     assert len(actions) == 1
     assert actions[0].kind == CodeActionKind.QuickFix
@@ -111,6 +110,7 @@ def test_lsp_code_action() -> None:
 
 def test_lsp_execute_command_rule_based() -> None:
     from lsprotocol.types import ExecuteCommandParams
+
     from phoenixsec.lsp.server import execute_command
 
     code = "my_secret = 'sk-proj-1234567890abcdef1234567890abcdef12345678'\n"
@@ -121,14 +121,12 @@ def test_lsp_execute_command_rule_based() -> None:
     mock_doc.source = code
     mock_ls.workspace.get_text_document.return_value = mock_doc
 
-    params = ExecuteCommandParams(
-        command="phoenixsec.applyFix",
-        arguments=[uri, "ALL-SEC-001", 0]
-    )
+    params = ExecuteCommandParams(command="phoenixsec.applyFix", arguments=[uri, "ALL-SEC-001", 0])
 
     with patch("phoenixsec.lsp.server.RuleEngine") as mock_engine_cls:
         from phoenixsec.models.finding import Finding, VulnerabilityType
         from phoenixsec.models.vulnerability import Severity
+
         mock_engine = Mock()
         mock_res = Mock()
         mock_finding = Finding(
@@ -139,7 +137,7 @@ def test_lsp_execute_command_rule_based() -> None:
             recommendation="Use environment variables",
             file_path="/test/secrets.py",
             line_number=1,
-            code_snippet="my_secret = 'sk-proj-1234567890abcdef1234567890abcdef12345678'"
+            code_snippet="my_secret = 'sk-proj-1234567890abcdef1234567890abcdef12345678'",
         )
         mock_res.findings = [mock_finding]
         mock_engine.scan_code.return_value = mock_res
@@ -158,6 +156,7 @@ def test_lsp_execute_command_rule_based() -> None:
 @patch("phoenixsec.core.ai_patcher.AIPatcher")
 def test_lsp_execute_command_ai_fallback(mock_ai_patcher_cls) -> None:
     from lsprotocol.types import ExecuteCommandParams
+
     from phoenixsec.lsp.server import execute_command
 
     code = "some_vulnerable_code_here\n"
@@ -173,13 +172,13 @@ def test_lsp_execute_command_ai_fallback(mock_ai_patcher_cls) -> None:
     mock_ls.workspace.get_text_document.return_value = mock_doc
 
     params = ExecuteCommandParams(
-        command="phoenixsec.applyFix",
-        arguments=[uri, "SOME-RULE-001", 0]
+        command="phoenixsec.applyFix", arguments=[uri, "SOME-RULE-001", 0]
     )
 
     with patch("phoenixsec.lsp.server.RuleEngine") as mock_engine_cls:
         from phoenixsec.models.finding import Finding, VulnerabilityType
         from phoenixsec.models.vulnerability import Severity
+
         mock_engine = Mock()
         mock_res = Mock()
         mock_finding = Finding(
@@ -190,7 +189,7 @@ def test_lsp_execute_command_ai_fallback(mock_ai_patcher_cls) -> None:
             recommendation="Fix it",
             file_path="/test/other.py",
             line_number=1,
-            code_snippet="some_vulnerable_code_here"
+            code_snippet="some_vulnerable_code_here",
         )
         mock_res.findings = [mock_finding]
         mock_engine.scan_code.return_value = mock_res
@@ -207,19 +206,24 @@ def test_lsp_execute_command_ai_fallback(mock_ai_patcher_cls) -> None:
 
 def test_lsp_language_detection_expanded() -> None:
     from phoenixsec.lsp.server import _validate_document
+
     # Mock text document publish diagnostics to verify
     # language is detected properly by the engine scan
-    with patch("phoenixsec.lsp.server.server.text_document_publish_diagnostics") as mock_publish:
+    with patch("phoenixsec.lsp.server.server.text_document_publish_diagnostics"):
         with patch("phoenixsec.lsp.server.RuleEngine.scan_code") as mock_scan:
             mock_scan.return_value.findings = []
-            
+
             # Test .rs -> rust
             _validate_document("file:///test/main.rs", "fn main() {}")
-            mock_scan.assert_called_with(code="fn main() {}", file_path="/test/main.rs", language="rust")
+            mock_scan.assert_called_with(
+                code="fn main() {}", file_path="/test/main.rs", language="rust"
+            )
 
             # Test .kt -> kotlin
             _validate_document("file:///test/main.kt", "fun main() {}")
-            mock_scan.assert_called_with(code="fun main() {}", file_path="/test/main.kt", language="kotlin")
+            mock_scan.assert_called_with(
+                code="fun main() {}", file_path="/test/main.kt", language="kotlin"
+            )
 
 
 @patch("phoenixsec.lsp.server.server.text_document_publish_diagnostics")
@@ -229,14 +233,11 @@ def test_lsp_diagnostics_dynamic_line_len(mock_publish) -> None:
     # Line index 3 (0-indexed line 3) is "os.system(cmd)" which has length 14
     params = DidOpenTextDocumentParams(
         text_document=TextDocumentItem(
-            uri="file:///test/vulnerable.py",
-            language_id="python",
-            version=1,
-            text=code
+            uri="file:///test/vulnerable.py", language_id="python", version=1, text=code
         )
     )
     did_open(Mock(), params)
-    
+
     mock_publish.assert_called_once()
     diagnostics = mock_publish.call_args[0][1]
     assert len(diagnostics) > 0
@@ -246,5 +247,3 @@ def test_lsp_diagnostics_dynamic_line_len(mock_publish) -> None:
             assert diag.range.end.character == 14
             found = True
     assert found
-
-

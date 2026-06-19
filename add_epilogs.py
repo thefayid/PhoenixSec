@@ -1,4 +1,3 @@
-import re
 import pathlib
 
 file_path = pathlib.Path(r"e:\Phoenix Sec\src\phoenixsec\cli\main.py")
@@ -15,14 +14,14 @@ epilogs = {
     "def scan_org(": 'epilog="Examples:\\n  phoenixsec scan-org my-org --format json\\n  phoenixsec scan-org my-org --workers 8 --no-sca"',
     "def init(": 'epilog="Examples:\\n  phoenixsec init\\n  phoenixsec init --non-interactive"',
     "def watch(": 'epilog="Examples:\\n  phoenixsec watch ./src --severity HIGH --interval 2.0"',
-    "def lsp(": 'epilog="Examples:\\n  phoenixsec lsp"'
+    "def lsp(": 'epilog="Examples:\\n  phoenixsec lsp"',
 }
 
 lines = content.splitlines()
 for i, line in enumerate(lines):
     if line.startswith("@app.command("):
         # find the associated def
-        for j in range(i+1, min(i+10, len(lines))):
+        for j in range(i + 1, min(i + 10, len(lines))):
             if lines[j].startswith("def "):
                 for key, epilog in epilogs.items():
                     if lines[j].startswith(key):
