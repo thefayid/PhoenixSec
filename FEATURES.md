@@ -20,6 +20,32 @@ PhoenixSec scans codebase files for critical vulnerabilities, supporting multipl
 
 ---
 
+## 📦 Software Composition Analysis (SCA)
+Scans project dependency manifests to detect vulnerable third-party packages:
+* **Format-Aware Parsing**: Robustly parses both legacy and modern `npm audit` schemas (v1/v2) and `pip-audit` structures.
+* **Alert Thresholds**: Reports vulnerability coordinates, advisories, and links to CVE database advisories.
+
+---
+
+## 🛠️ CLI Commands & Toolset
+PhoenixSec provides a developer-friendly command line interface (CLI) loaded with utilities:
+* `phoenixsec scan`: The primary command to scan files/directories with options for formatting, patching, proving, and rotation.
+* `phoenixsec install-hook`: Installs git pre-commit hooks that scan staged files and block commits if vulnerabilities at or above a severity threshold are found.
+* `phoenixsec api`: Exposes a fully-functional REST API server for remote scanning and patch generation.
+* `phoenixsec webhook`: Starts a GitHub webhook server that listens for `push` and `pull_request` events to run security checks and post inline review comments.
+* `phoenixsec benchmark`: Executes the benchmark suite against targets to compute Precision, Recall (True/False Positive Rate), and Speed (LOC/sec) metrics.
+* `phoenixsec version`: Prints version details and system info.
+
+---
+
+## 🏗️ Advanced Core Architecture
+* **Inter-Procedural Taint Analysis**: Tracks dataflow across function and file boundaries using call graph mapping.
+* **Context-Aware Sliding Window Scorer**: Extracts execution sink line context (configurable window size) to identify dynamically assembled queries.
+* **Rule Registry mappings**: Easily registers security rules supporting singular or plural (`languages = [...]`) language target matches.
+* **Custom Severity Overrides**: Allows developers to override default rule severities globally via `config.yaml`.
+
+---
+
 ## 🤖 Agentic Proof-of-Exploit (Red Teamer)
 To eliminate false positives, the **Agentic Red Teamer (ART)** attempts to verify scan findings in real-time.
 * **Autonomous Hacking**: Spawns an agent that writes exploit payloads targeting the identified source code.
