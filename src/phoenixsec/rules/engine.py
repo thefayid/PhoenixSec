@@ -324,6 +324,7 @@ class RuleEngine:
 
         merged_findings = semgrep_scanner.merge_and_deduplicate(result.findings, semgrep_findings)
         from phoenixsec.core.suppression import filter_findings
+
         result.findings = filter_findings(merged_findings, allowlist=self._allowlist)
         return result
 
