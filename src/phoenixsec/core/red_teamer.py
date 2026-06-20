@@ -114,6 +114,41 @@ class AgenticRedTeamer:
         except PhoenixSecError as exc:
             return False, f"Failed to generate exploit: {exc}"
 
+        # AST Safety Check to prevent executing malicious code
+        import ast
+
+        try:
+            tree = ast.parse(test_code)
+            allowed_imports = {
+                "pytest",
+                "target_module",
+                "typing",
+                "json",
+                "unittest",
+                "math",
+                "re",
+            }
+            for node in ast.walk(tree):
+                # Restrict imports
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name.split(".")[0] not in allowed_imports:
+                            return False, f"Unsafe exploit code: disallowed import '{alias.name}'"
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module and node.module.split(".")[0] not in allowed_imports:
+                        return False, f"Unsafe exploit code: disallowed import from '{node.module}'"
+
+                # Check for direct calls to dangerous builtins/eval/exec
+                elif isinstance(node, ast.Call):
+                    if isinstance(node.func, ast.Name):
+                        if node.func.id in {"eval", "exec", "compile", "__import__"}:
+                            return (
+                                False,
+                                f"Unsafe exploit code: dangerous builtin call '{node.func.id}'",
+                            )
+        except Exception as parse_err:
+            return False, f"Unsafe exploit code: failed to validate syntax tree: {parse_err}"
+
         # Setup sandbox/temp directory
         temp_dir = file_path.parent / ".phoenix_sandbox"
         temp_dir.mkdir(exist_ok=True)

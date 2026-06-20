@@ -45,7 +45,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from phoenixsec.core.logger import get_logger
 from phoenixsec.models.vulnerability import Severity
+
+log = get_logger(__name__)
 
 # ── VulnerabilityType ──────────────────────────────────────────────────────────
 
@@ -64,6 +67,7 @@ class VulnerabilityType(StrEnum):
 
     # Injection family
     SQL_INJECTION = "SQL Injection"
+    NOSQL_INJECTION = "NoSQL Injection"
     COMMAND_INJECTION = "Command Injection"
     CODE_INJECTION = "Code Injection"
     LDAP_INJECTION = "LDAP Injection"
@@ -263,8 +267,8 @@ class Finding:
             )
         if not (0.0 <= self.confidence_score <= 1.0):
             raise ValueError(f"confidence_score must be in [0.0, 1.0], got {self.confidence_score}")
-        if self.line_number is not None and self.line_number < 0:
-            raise ValueError(f"line_number must be >= 0, got {self.line_number}")
+        if self.line_number is not None and self.line_number < 1:
+            raise ValueError(f"line_number must be >= 1, got {self.line_number}")
 
     # ── Derived properties ─────────────────────────────────────────────────────
 
@@ -320,7 +324,8 @@ class Finding:
 
         try:
             compliance = get_compliance_mappings(self.cwe_id)
-        except Exception:
+        except Exception as exc:
+            log.warning(f"Failed to get compliance mappings for CWE {self.cwe_id}: {exc}")
             compliance = {}
 
         return {

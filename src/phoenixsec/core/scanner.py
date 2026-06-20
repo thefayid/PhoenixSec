@@ -142,7 +142,14 @@ class Scanner:
 
             # Routing by language
             rule_lang = getattr(rule_class, "language", "*").lower()
-            if rule_lang not in {language, "*"}:
+            rule_langs = getattr(rule_class, "languages", None)
+            if isinstance(rule_langs, list):
+                cls_langs = [l.lower() for l in rule_langs]
+                matched = language in cls_langs or "*" in cls_langs
+            else:
+                matched = rule_lang in {language, "*"}
+
+            if not matched:
                 continue
 
             try:

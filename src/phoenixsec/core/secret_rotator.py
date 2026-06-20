@@ -12,7 +12,7 @@ class MockCloudSecretRotator:
     """Simulates integration with Cloud Providers to revoke and rotate secrets."""
 
     def __init__(self, workspace_root: Path | None = None) -> None:
-        self.workspace_root = workspace_root or Path.cwd()
+        self.workspace_root = (workspace_root or Path.cwd()).resolve()
 
     def identify_provider(self, secret_value: str) -> str | None:
         """Heuristically identify the cloud provider based on secret format."""
@@ -32,6 +32,17 @@ class MockCloudSecretRotator:
         """
         if finding.vulnerability_type != VulnerabilityType.HARDCODED_SECRET:
             return False, "Not a hardcoded secret."
+
+        # Validate that the file_path is inside the workspace_root to prevent traversal/out-of-bound edits
+        try:
+            finding_path = Path(finding.file_path).resolve()
+            if not finding_path.is_relative_to(self.workspace_root):
+                # Try relative to workspace root if it was specified as relative
+                finding_path = (self.workspace_root / finding.file_path).resolve()
+                if not finding_path.is_relative_to(self.workspace_root):
+                    return False, "Invalid path: target file is outside the workspace root."
+        except Exception:
+            return False, "Invalid path format."
 
         # Extract the literal secret from the source code based on line number
         # A simple regex extraction just for demonstration purposes.
@@ -66,7 +77,10 @@ class MockCloudSecretRotator:
         new_key = ""
         env_key = ""
         if provider == "AWS":
-            new_key = f"AKIA{secrets.token_hex(8).upper()}"
+            import string
+
+            chars = string.ascii_uppercase + string.digits
+            new_key = "AKIA" + "".join(secrets.choice(chars) for _ in range(16))
             env_key = "AWS_ACCESS_KEY_ID"
         elif provider == "GitHub":
             new_key = f"ghp_{secrets.token_urlsafe(26)}"

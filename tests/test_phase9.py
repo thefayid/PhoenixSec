@@ -14,16 +14,16 @@ from phoenixsec.utils.parser import FileParser
 
 class TestPhase9:
     def test_line_number_zero_and_negative(self) -> None:
-        # 0 should be allowed
-        f = Finding(
-            vulnerability_type=VulnerabilityType.SQL_INJECTION,
-            severity=Severity.HIGH,
-            confidence_score=0.9,
-            recommendation="Fix it",
-            file_path="app.py",
-            line_number=0,
-        )
-        assert f.line_number == 0
+        # 0 should raise ValueError
+        with pytest.raises(ValueError, match="line_number"):
+            Finding(
+                vulnerability_type=VulnerabilityType.SQL_INJECTION,
+                severity=Severity.HIGH,
+                confidence_score=0.9,
+                recommendation="Fix it",
+                file_path="app.py",
+                line_number=0,
+            )
 
         # Negative should still raise ValueError
         with pytest.raises(ValueError, match="line_number"):

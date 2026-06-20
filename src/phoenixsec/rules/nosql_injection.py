@@ -103,7 +103,7 @@ def _build_finding(sink: _NoSQLSink, file_path: str) -> Finding:
     rule_id = lang_map.get(sink.language, "PSEC-NOSQL-001")
     return Finding(
         rule_id=rule_id,
-        vulnerability_type=VulnerabilityType.SQL_INJECTION,  # Map to general Database/SQL Injection family
+        vulnerability_type=VulnerabilityType.NOSQL_INJECTION,
         severity=Severity.HIGH,
         confidence_score=sink.score,
         file_path=file_path,
@@ -131,6 +131,7 @@ class PythonNoSQLInjectionRule(BaseRule):
     name = "Python NoSQL Injection"
     language = "python"
     severity = Severity.HIGH
+    category = VulnerabilityType.NOSQL_INJECTION
     cwe_id = "CWE-943"
 
     def scan(self, code: str, file_path: str) -> Finding | None:
@@ -166,6 +167,7 @@ class JavaScriptNoSQLInjectionRule(BaseRule):
     name = "JavaScript NoSQL Injection"
     languages = ["javascript", "typescript"]
     severity = Severity.HIGH
+    category = VulnerabilityType.NOSQL_INJECTION
     cwe_id = "CWE-943"
 
     def scan(self, code: str, file_path: str) -> Finding | None:
