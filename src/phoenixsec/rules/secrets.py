@@ -255,12 +255,6 @@ class HardcodedSecretsRule(BaseRule):
             # with multiple interpolations
             if re.search(r"\b(SELECT|INSERT|UPDATE|DELETE)\b", line, re.IGNORECASE):
                 continue
-            has_secret_match = bool(
-                _AWS_KEY_RE.search(line)
-                or _GENERIC_KEY_RE.search(line)
-                or _GITHUB_TOKEN_RE.search(line)
-                or _ASSIGNMENT_RE.search(line)
-            )
             is_fstring = bool(re.search(r"\bf['\"]", line)) or 'f"""' in line or "f'''" in line
             has_multiple_interpolations = len(re.findall(r"\{[^}]+\}", line)) >= 2
             has_assignment = ":=" in line or "=" in line

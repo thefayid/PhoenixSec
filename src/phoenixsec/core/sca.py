@@ -189,7 +189,11 @@ class SCAScanner:
             results = data
         elif isinstance(data, dict):
             # Check for different possible keys in pip-audit JSON structure
-            results = data.get("dependencies", []) or data.get("results", []) or data.get("vulnerabilities", [])
+            results = (
+                data.get("dependencies", [])
+                or data.get("results", [])
+                or data.get("vulnerabilities", [])
+            )
             if not isinstance(results, list):
                 results = []
 
@@ -350,7 +354,7 @@ class SCAScanner:
         # 2. Parse legacy npm audit v1 schema (advisories)
         advisories = data.get("advisories", {})
         if isinstance(advisories, dict):
-            for adv_id, adv_info in advisories.items():
+            for _adv_id, adv_info in advisories.items():
                 if not isinstance(adv_info, dict):
                     continue
                 pkg_name = adv_info.get("module_name", "unknown")

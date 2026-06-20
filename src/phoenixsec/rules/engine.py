@@ -323,7 +323,8 @@ class RuleEngine:
         log.debug(f"RuleEngine: Semgrep produced {len(semgrep_findings)} findings.")
 
         merged_findings = semgrep_scanner.merge_and_deduplicate(result.findings, semgrep_findings)
-        result.findings = merged_findings
+        from phoenixsec.core.suppression import filter_findings
+        result.findings = filter_findings(merged_findings, allowlist=self._allowlist)
         return result
 
     def scan_file_to_report(self, path: Path | str) -> Report:
