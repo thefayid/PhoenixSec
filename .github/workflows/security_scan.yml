@@ -27,7 +27,7 @@ on:
       auto_patch:
         description: "Auto-generate fix PR on findings"
         required: false
-        default: "true"
+        default: true
         type: boolean
 
 # Cancel redundant in-flight runs on the same branch
