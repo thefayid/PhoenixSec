@@ -1,6 +1,7 @@
+from werkzeug.utils import secure_filename
 import pathlib
 
-file_path = pathlib.Path(r"e:\Phoenix Sec\src\phoenixsec\cli\main.py")
+file_path = pathlib.Path(secure_filename(r"e:\Phoenix Sec\src\phoenixsec\cli\main.py"))
 content = file_path.read_text(encoding="utf-8")
 
 epilogs = {
