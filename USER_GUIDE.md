@@ -139,12 +139,10 @@ jobs:
           python-version: "3.12"
       - name: Install PhoenixSec
         run: pip install git+https://github.com/thefayid/PhoenixSec.git
-      - name: Run Scan & Auto-Fix
-        env:
-          PHOENIXSEC_AI_KEY: ${{ secrets.PHOENIXSEC_AI_KEY }}
-        run: phoenixsec scan . --patch --yes
+      - name: Run Security Scan
+        run: phoenixsec scan .
 ```
-Now, every time you push code, PhoenixSec will automatically run, find bugs, and automatically generate fixes!
+Now, every time you push code, PhoenixSec will automatically run and inspect your project for security issues!
 
 ---
 

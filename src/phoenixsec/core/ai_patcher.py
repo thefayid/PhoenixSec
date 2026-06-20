@@ -31,9 +31,11 @@ class AIPatcher:
         if self._config.patching.provider.lower() == "gemini":
             api_key = os.environ.get("PHOENIXSEC_AI_KEY") or os.environ.get("GEMINI_API_KEY")
             if not api_key:
-                raise PhoenixSecError(
-                    "Gemini API key not found. Set GEMINI_API_KEY or change patching.provider to 'ollama'"
+                log.warning(
+                    "Gemini API key not found. Falling back to 'ollama' provider with 'qwen2.5-coder' model."
                 )
+                self._config.patching.provider = "ollama"
+                self._config.patching.model = "qwen2.5-coder"
 
     def _find_venv_bin(self, bin_name: str) -> Path | None:
         """Find executable dynamically in venv folders or current Python prefix."""

@@ -813,10 +813,26 @@ class ASTAnalyzer:
             # Dynamic confidence score based on rule ID / type or severity
             if af.rule_id == "AST-PY-SQLI-001":
                 confidence = 0.95
+            elif af.rule_id == "AST-PY-CMDI-001":
+                confidence = 0.90 if af.severity == Severity.CRITICAL else 0.80
+            elif af.rule_id == "AST-PY-CODEI-001":
+                confidence = 0.95
+            elif af.rule_id == "AST-PY-CODEI-002":
+                confidence = 0.60
+            elif af.rule_id == "AST-PY-DESER-001":
+                confidence = 0.85
+            elif af.rule_id == "AST-PY-DESER-002":
+                confidence = 0.70
+            elif af.rule_id == "AST-PY-PATH-001":
+                confidence = 0.75
             elif af.severity == Severity.CRITICAL:
                 confidence = 0.90
+            elif af.severity == Severity.HIGH:
+                confidence = 0.80
+            elif af.severity == Severity.MEDIUM:
+                confidence = 0.65
             else:
-                confidence = 0.85
+                confidence = 0.50
 
             f = Finding(
                 vulnerability_type=af.vulnerability_type,

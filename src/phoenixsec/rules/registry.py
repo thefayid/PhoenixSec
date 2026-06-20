@@ -270,7 +270,14 @@ class RuleRegistry:
             E.g. ``frozenset({"python", "java", "*"})``.
         """
         with self._lock:
-            return frozenset(cls.language.lower() for cls in self._rules.values())
+            langs = set()
+            for cls in self._rules.values():
+                cls_langs = getattr(cls, "languages", None)
+                if isinstance(cls_langs, list):
+                    langs.update(l.lower() for l in cls_langs)
+                else:
+                    langs.add(getattr(cls, "language", "*").lower())
+            return frozenset(langs)
 
     def rule_ids(self) -> frozenset[str]:
         """Return a snapshot of all registered rule IDs.

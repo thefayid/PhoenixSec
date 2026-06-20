@@ -180,25 +180,37 @@ class SCAScanner:
             log.warning("Failed to decode pip-audit JSON output.")
             return findings
 
+        if not isinstance(data, (dict, list)):
+            return findings
+
         # pip-audit output can be a list of results, or a dictionary containing "dependencies"
         results = []
         if isinstance(data, list):
             results = data
         elif isinstance(data, dict):
-            results = data.get("dependencies", [])
+            # Check for different possible keys in pip-audit JSON structure
+            results = data.get("dependencies", []) or data.get("results", []) or data.get("vulnerabilities", [])
+            if not isinstance(results, list):
+                results = []
 
         for item in results:
+            if not isinstance(item, dict):
+                continue
             name = item.get("name")
             version = item.get("version")
-            vulns = item.get("vulns", [])
-            if not vulns:
+            vulns = item.get("vulns", []) or item.get("vulnerabilities", [])
+            if not isinstance(vulns, list) or not vulns:
                 continue
 
             for vuln in vulns:
+                if not isinstance(vuln, dict):
+                    continue
                 vuln_id = vuln.get("id", "UNKNOWN")
                 cve = vuln.get("cve")
                 desc = vuln.get("description", "No description provided.")
                 fix_versions = vuln.get("fix_versions", [])
+                if not isinstance(fix_versions, list):
+                    fix_versions = [fix_versions] if fix_versions else []
 
                 details = f"Vulnerability {vuln_id}"
                 if cve:
@@ -207,7 +219,7 @@ class SCAScanner:
 
                 recs = f"Upgrade {name}"
                 if fix_versions:
-                    recs += f" to one of: {', '.join(fix_versions)}"
+                    recs += f" to one of: {', '.join(str(v) for v in fix_versions if v)}"
                 else:
                     recs += " to the latest secure version."
 
@@ -269,55 +281,104 @@ class SCAScanner:
             log.warning("Failed to decode npm audit JSON output.")
             return findings
 
+        if not isinstance(data, dict):
+            return findings
+
+        # 1. Parse modern npm audit v2 schema (vulnerabilities)
         vulnerabilities = data.get("vulnerabilities", {})
-        for pkg_name, vuln_info in vulnerabilities.items():
-            sev_str = vuln_info.get("severity", "high").upper()
-            try:
-                severity = Severity.from_string(sev_str)
-            except ValueError:
-                severity = Severity.HIGH
+        if isinstance(vulnerabilities, dict):
+            for pkg_name, vuln_info in vulnerabilities.items():
+                if not isinstance(vuln_info, dict):
+                    continue
+                sev_str = vuln_info.get("severity", "high").upper()
+                try:
+                    severity = Severity.from_string(sev_str)
+                except ValueError:
+                    severity = Severity.HIGH
 
-            via_list = vuln_info.get("via", [])
-            for via in via_list:
-                if isinstance(via, dict):
-                    via.get("title", f"Vulnerable dependency in {pkg_name}")
-                    url = via.get("url")
-                    cwe_list = via.get("cwe", [])
-                    cwe_id = cwe_list[0] if cwe_list else "CWE-1104"
+                via_list = vuln_info.get("via", [])
+                if not isinstance(via_list, list):
+                    via_list = [via_list]
 
-                    fix_info = vuln_info.get("fixAvailable")
-                    recs = f"Audit and upgrade dependency {pkg_name}."
-                    if isinstance(fix_info, dict):
-                        fix_ver = fix_info.get("version")
-                        if fix_ver:
-                            recs = f"Upgrade {pkg_name} to version {fix_ver}."
+                for via in via_list:
+                    if isinstance(via, dict):
+                        via_title = via.get("title", f"Vulnerable dependency in {pkg_name}")
+                        url = via.get("url")
+                        cwe_list = via.get("cwe", [])
+                        if isinstance(cwe_list, list) and cwe_list:
+                            cwe_id = cwe_list[0]
+                        elif isinstance(cwe_list, str):
+                            cwe_id = cwe_list
+                        else:
+                            cwe_id = "CWE-1104"
 
-                    findings.append(
-                        Finding(
-                            vulnerability_type=VulnerabilityType.DEPENDENCY_VULNERABILITY,
-                            severity=severity,
-                            confidence_score=0.9,
-                            recommendation=recs,
-                            file_path=str(file_path),
-                            rule_id=f"SCA-NPM-{pkg_name}",
-                            cwe_id=cwe_id,
-                            references=tuple([url]) if url else (),
-                            code_snippet=f'"{pkg_name}": "{vuln_info.get("range", "*")}"',
+                        fix_info = vuln_info.get("fixAvailable")
+                        recs = f"Audit and upgrade dependency {pkg_name}. {via_title}"
+                        if isinstance(fix_info, dict):
+                            fix_ver = fix_info.get("version")
+                            if fix_ver:
+                                recs = f"Upgrade {pkg_name} to version {fix_ver}."
+
+                        findings.append(
+                            Finding(
+                                vulnerability_type=VulnerabilityType.DEPENDENCY_VULNERABILITY,
+                                severity=severity,
+                                confidence_score=0.9,
+                                recommendation=recs,
+                                file_path=str(file_path),
+                                rule_id=f"SCA-NPM-{pkg_name}",
+                                cwe_id=cwe_id,
+                                references=tuple([url]) if url else (),
+                                code_snippet=f'"{pkg_name}": "{vuln_info.get("range", "*")}"',
+                            )
                         )
-                    )
-                elif isinstance(via, str):
-                    # Direct depend on another vulnerable package name
-                    findings.append(
-                        Finding(
-                            vulnerability_type=VulnerabilityType.DEPENDENCY_VULNERABILITY,
-                            severity=severity,
-                            confidence_score=0.8,
-                            recommendation=f"Upgrade dependency {pkg_name} or parent dependency {via}.",
-                            file_path=str(file_path),
-                            rule_id=f"SCA-NPM-{pkg_name}",
-                            cwe_id="CWE-1104",
-                            code_snippet=f'"{pkg_name}" via parent "{via}"',
+                    elif isinstance(via, str):
+                        # Direct depend on another vulnerable package name
+                        findings.append(
+                            Finding(
+                                vulnerability_type=VulnerabilityType.DEPENDENCY_VULNERABILITY,
+                                severity=severity,
+                                confidence_score=0.8,
+                                recommendation=f"Upgrade dependency {pkg_name} or parent dependency {via}.",
+                                file_path=str(file_path),
+                                rule_id=f"SCA-NPM-{pkg_name}",
+                                cwe_id="CWE-1104",
+                                code_snippet=f'"{pkg_name}" via parent "{via}"',
+                            )
                         )
+
+        # 2. Parse legacy npm audit v1 schema (advisories)
+        advisories = data.get("advisories", {})
+        if isinstance(advisories, dict):
+            for adv_id, adv_info in advisories.items():
+                if not isinstance(adv_info, dict):
+                    continue
+                pkg_name = adv_info.get("module_name", "unknown")
+                sev_str = adv_info.get("severity", "high").upper()
+                try:
+                    severity = Severity.from_string(sev_str)
+                except ValueError:
+                    severity = Severity.HIGH
+
+                title = adv_info.get("title", "Vulnerable dependency")
+                url = adv_info.get("url")
+                cwe_info = adv_info.get("cwe", "CWE-1104")
+                cwe_id = cwe_info if isinstance(cwe_info, str) else "CWE-1104"
+                patched_versions = adv_info.get("patched_versions", "latest")
+
+                recs = f"Upgrade {pkg_name} to version {patched_versions}. ({title})"
+                findings.append(
+                    Finding(
+                        vulnerability_type=VulnerabilityType.DEPENDENCY_VULNERABILITY,
+                        severity=severity,
+                        confidence_score=0.9,
+                        recommendation=recs,
+                        file_path=str(file_path),
+                        rule_id=f"SCA-NPM-{pkg_name}",
+                        cwe_id=cwe_id,
+                        references=tuple([url]) if url else (),
+                        code_snippet=f'"{pkg_name}": "{adv_info.get("findings", [{}])[0].get("version", "*")}"',
                     )
+                )
 
         return findings

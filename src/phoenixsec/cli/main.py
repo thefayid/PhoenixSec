@@ -256,7 +256,12 @@ def scan(
     [dim]Example:[/dim]
       [green]phoenixsec scan ./src --severity HIGH --format json[/green]
     """
-    cfg = ctx.obj["config"]
+    if ctx.obj is None:
+        ctx.ensure_object(dict)
+    cfg = ctx.obj.get("config")
+    if cfg is None:
+        cfg = load_config()
+        ctx.obj["config"] = cfg
 
     # Validate severity option
     try:
@@ -1427,7 +1432,12 @@ def scan_org(
     from phoenixsec.reporters.json_reporter import JsonReporter
     from phoenixsec.rules.engine import RuleEngine
 
-    cfg = ctx.obj["config"]
+    if ctx.obj is None:
+        ctx.ensure_object(dict)
+    cfg = ctx.obj.get("config")
+    if cfg is None:
+        cfg = load_config()
+        ctx.obj["config"] = cfg
 
     if not token:
         err_console.print(

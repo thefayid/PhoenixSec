@@ -71,8 +71,9 @@ def test_generate_patch_missing_key(
     monkeypatch.delenv("PHOENIXSEC_AI_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
-    with pytest.raises(PhoenixSecError, match="Gemini API key not found"):
-        AIPatcher()
+    patcher = AIPatcher()
+    assert patcher._config.patching.provider == "ollama"
+    assert patcher._config.patching.model == "qwen2.5-coder"
 
 
 def test_validate_patch_syntax_error(dummy_finding: Finding, tmp_path: Path) -> None:

@@ -50,7 +50,7 @@ log = get_logger(__name__)
 # ── Naming Identifier Assignments ─────────────────────────────────────────────
 # Matches: password = "xxx", API_KEY: 'xxx', secret_token => "xxx", etc.
 _ASSIGNMENT_RE = re.compile(
-    r"\b(password|passwd|api[_-]?key|jwt[_-]?secret|secret[_-]?token|token|aws[_-]?key|access[_-]?key|secret|credential|auth[_-]?token)\s*[:=]\s*([\"'])([^\"'\n\r]+)\2",
+    r"\b(password|passwd|api[_-]?key|jwt[_-]?secret|secret[_-]?token|token|aws[_-]?key|access[_-]?key|secret|credential|auth[_-]?token)\s*[:=]\s*f?([\"'])([^\"'\n\r]+)\2",
     re.IGNORECASE,
 )
 
@@ -263,7 +263,8 @@ class HardcodedSecretsRule(BaseRule):
             )
             is_fstring = bool(re.search(r"\bf['\"]", line)) or 'f"""' in line or "f'''" in line
             has_multiple_interpolations = len(re.findall(r"\{[^}]+\}", line)) >= 2
-            if is_fstring and has_multiple_interpolations and not has_secret_match:
+            has_assignment = ":=" in line or "=" in line
+            if is_fstring and has_multiple_interpolations and not has_assignment:
                 continue
 
             matches: list[_SecretMatch] = []

@@ -372,14 +372,27 @@ class _SQLiAnalyzer:
     SCORE_THRESHOLD: float = 0.50
     LOOK_AHEAD: int = 3  # lines below the sink (multiline calls)
 
+    def __init__(self) -> None:
+        self._window_override: int | None = None
+
     @property
     def CONTEXT_WINDOW(self) -> int:
         """Dynamic context window size loaded from configuration (defaulting to 12)."""
+        if getattr(self, "_window_override", None) is not None:
+            return self._window_override
         try:
             cfg = load_config()
             return cfg.scanning.sqli_window_size
         except Exception:
             return 12
+
+    @property
+    def WINDOW(self) -> int:
+        return self.CONTEXT_WINDOW
+
+    @WINDOW.setter
+    def WINDOW(self, value: int) -> None:
+        self._window_override = value
 
     # ── Sink discovery ─────────────────────────────────────────────────────────
 
