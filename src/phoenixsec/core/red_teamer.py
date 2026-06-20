@@ -127,6 +127,12 @@ class AgenticRedTeamer:
                 "unittest",
                 "math",
                 "re",
+                "os",
+                "sys",
+                "subprocess",
+                "requests",
+                "urllib",
+                "socket",
             }
             for node in ast.walk(tree):
                 # Restrict imports
@@ -138,14 +144,100 @@ class AgenticRedTeamer:
                     if node.module and node.module.split(".")[0] not in allowed_imports:
                         return False, f"Unsafe exploit code: disallowed import from '{node.module}'"
 
-                # Check for direct calls to dangerous builtins/eval/exec
+                # Check for direct calls or reference to dangerous API operations
                 elif isinstance(node, ast.Call):
+                    # Prohibit dangerous builtins
                     if isinstance(node.func, ast.Name):
-                        if node.func.id in {"eval", "exec", "compile", "__import__"}:
+                        if node.func.id in {"eval", "exec", "compile", "__import__", "open"}:
                             return (
                                 False,
                                 f"Unsafe exploit code: dangerous builtin call '{node.func.id}'",
                             )
+                    # Check calls on attributes (e.g. os.system, subprocess.run)
+                    elif isinstance(node.func, ast.Attribute):
+                        # Find object being called
+                        obj_name = ""
+                        if isinstance(node.func.value, ast.Name):
+                            obj_name = node.func.value.id
+
+                        attr_name = node.func.attr
+
+                        # Disallow process execution APIs completely
+                        if obj_name == "os" and attr_name in {
+                            "system",
+                            "popen",
+                            "spawnl",
+                            "spawnle",
+                            "spawnlp",
+                            "spawnlpe",
+                            "spawnv",
+                            "spawnve",
+                            "spawnvp",
+                            "spawnvpe",
+                            "execl",
+                            "execle",
+                            "execlp",
+                            "execlpe",
+                            "execv",
+                            "execve",
+                            "execvp",
+                            "execvpe",
+                            "remove",
+                            "unlink",
+                            "rmdir",
+                            "removedirs",
+                            "chmod",
+                            "chown",
+                        }:
+                            return (
+                                False,
+                                f"Unsafe exploit code: disallowed execution call 'os.{attr_name}'",
+                            )
+
+                        if obj_name == "subprocess" and attr_name in {
+                            "run",
+                            "Popen",
+                            "call",
+                            "check_call",
+                            "check_output",
+                            "getstatusoutput",
+                            "getoutput",
+                        }:
+                            return (
+                                False,
+                                f"Unsafe exploit code: disallowed execution call 'subprocess.{attr_name}'",
+                            )
+
+                        # Restrict requests or urllib calls to only safe hosts (e.g., local hostnames)
+                        if obj_name == "requests" or (
+                            obj_name == "urllib" and attr_name == "request"
+                        ):
+                            # Simple validation of first string arg (the URL)
+                            if node.args and isinstance(node.args[0], ast.Constant):
+                                url_val = str(node.args[0].value)
+                                # Only allow local endpoints/hosts
+                                if not any(x in url_val for x in ("127.0.0.1", "localhost", "::1")):
+                                    return (
+                                        False,
+                                        f"Unsafe exploit code: outbound connection to '{url_val}' is disallowed",
+                                    )
+
+                        if obj_name == "socket" and attr_name in {"connect", "connect_ex"}:
+                            if (
+                                node.args
+                                and isinstance(node.args[0], ast.Tuple)
+                                and len(node.args[0].elts) > 0
+                            ):
+                                host_node = node.args[0].elts[0]
+                                if isinstance(host_node, ast.Constant):
+                                    host_val = str(host_node.value)
+                                    if not any(
+                                        x in host_val for x in ("127.0.0.1", "localhost", "::1")
+                                    ):
+                                        return (
+                                            False,
+                                            f"Unsafe exploit code: socket connection to '{host_val}' is disallowed",
+                                        )
         except Exception as parse_err:
             return False, f"Unsafe exploit code: failed to validate syntax tree: {parse_err}"
 
