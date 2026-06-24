@@ -45,8 +45,8 @@ def get_user():
     cursor = conn.cursor()
 
     # ❌ VULNERABLE: String formatting injects user input directly into SQL
-    query = f"SELECT * FROM users WHERE id = {user_id}"
-    cursor.execute(query)
+    query = "SELECT * FROM users WHERE id = ?"
+    cursor.execute(query, (user_id,))
 
     # ✅ FIXED (what PhoenixSec --patch would generate):
     # cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
